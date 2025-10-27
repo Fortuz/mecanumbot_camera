@@ -42,6 +42,7 @@ RUN apt-get purge -y python3-sympy || true && \
 RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install --no-cache-dir \
         "numpy==1.26.4" "opencv-python-headless==4.9.0.80"
+RUN python3 -m pip install --no-cache-dir deep-sort-realtime
 
 # PyTorch (CPU only) + ONNX + Ultralytics
 RUN python3 -m pip install --no-cache-dir \
@@ -71,6 +72,7 @@ RUN echo 'source /opt/ros/humble/setup.bash' >> /root/.bashrc && \
     echo 'export ROS_LOCALHOST_ONLY=0' >> /root/.bashrc && \
     echo "alias start_robot='ros2 launch mecanumbot_bringup robot.launch.py'" >> /root/.bashrc && \
     echo "alias start_robot_with_led='ros2 launch mecanumbot_bringup robot.launch.py & ros2 run mecanumbot_led mecanumbot_led_service & wait'" >> /root/.bashrc && \
+    echo "alias start_camera='ros2 launch mecanumbot_camera camera_and_detectors.launch.py & wait'" >> /root/.bashrc && \
     echo 'echo "✅ ROS 2 Humble & Mecanumbot environment ready!"' >> /root/.bashrc
 
 # ------------------------------------------------------------
