@@ -72,7 +72,27 @@ def generate_launch_description():
         ),
 
         # Actions
-        Node(package='mecanumbot_camera', executable='search_action_server'),
-        Node(package='mecanumbot_camera', executable='fetch_action_server'),
-        Node(package='mecanumbot_camera', executable='supervisor'),        
+        Node(
+            package='mecanumbot_camera',
+            executable='search_action_server',
+            name='search_action_server',
+            output='screen',
+            parameters=[]
+        ),
+
+        Node(
+            package='mecanumbot_camera',
+            executable='fetch_action_server',
+            name='fetch_action_server',
+            output='screen',
+            parameters=[]
+        ),
+
+        Node(
+            package='mecanumbot_camera',
+            executable='supervisor',
+            name='supervisor',
+            output='screen',
+            parameters=[]
+        ),
     ])
