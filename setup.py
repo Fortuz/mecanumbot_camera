@@ -28,6 +28,9 @@ setup(
             'detection_overlay = mecanumbot_camera.detection_overlay:main',
             'overlay_fused   = mecanumbot_camera.overlay_fused:main', 
             'ball_follower = mecanumbot_camera.ball_follower:main',
+            'search_action_server = mecanumbot_camera.search_action_server:main',
+            'fetch_action_server  = mecanumbot_camera.fetch_action_server:main',
+            'supervisor           = mecanumbot_camera.supervisor:main',
         ],
     },
 )

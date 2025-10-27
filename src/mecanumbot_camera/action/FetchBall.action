@@ -1,0 +1,6 @@
+# goal (stop distance in pixels, e.g. 60)
+int32 stop_px
+---
+bool success
+---
+string status

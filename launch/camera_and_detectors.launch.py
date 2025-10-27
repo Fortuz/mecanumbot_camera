@@ -69,5 +69,10 @@ def generate_launch_description():
             name='overlay_fused',
             output='screen',
             parameters=[params],   # reuse your params.yaml (optional)
-        )
+        ),
+
+        # Actions
+        Node(package='mecanumbot_camera', executable='search_action_server'),
+        Node(package='mecanumbot_camera', executable='fetch_action_server'),
+        Node(package='mecanumbot_camera', executable='supervisor'),        
     ])
