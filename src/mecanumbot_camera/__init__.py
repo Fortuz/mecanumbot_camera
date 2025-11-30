@@ -1,1 +1,0 @@
-# mecanumbot_camera package

@@ -1,7 +1,0 @@
-services:
-  ros2:
-    # Enable when a /dev/video* device is attached to the Docker Desktop/WSL VM.
-    devices:
-      - /dev/video0:/dev/video0
-    device_cgroup_rules:
-      - 'c 81:* rmw'

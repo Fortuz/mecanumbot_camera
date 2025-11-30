@@ -71,28 +71,22 @@ def generate_launch_description():
             parameters=[params],   # reuse your params.yaml (optional)
         ),
 
-        # Actions
+        # Behavior Manager
         Node(
             package='mecanumbot_camera',
-            executable='search_action_server',
-            name='search_action_server',
-            output='screen',
-            parameters=[]
+            executable='behavior_manager',
+            output='screen'
         ),
 
+        # Foxglove
         Node(
-            package='mecanumbot_camera',
-            executable='fetch_action_server',
-            name='fetch_action_server',
-            output='screen',
-            parameters=[]
-        ),
-
-        Node(
-            package='mecanumbot_camera',
-            executable='supervisor',
-            name='supervisor',
-            output='screen',
-            parameters=[]
-        ),
+            package="foxglove_bridge",
+            executable="foxglove_bridge",
+            name="foxglove_bridge",
+            output="screen",
+            parameters=[
+                {"port": 8765},
+                {"address": "0.0.0.0"}
+            ]
+        )
     ])

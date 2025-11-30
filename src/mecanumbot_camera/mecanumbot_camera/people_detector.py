@@ -19,6 +19,7 @@ try:
 except Exception:
     DeepSort = None
 
+
 def parse_yolo_outputs(outputs, num_classes=80, person_cls=0):
     """
     Accepts tensors shaped like:
@@ -57,6 +58,7 @@ def parse_yolo_outputs(outputs, num_classes=80, person_cls=0):
         scores = class_scores[:, person_cls]
     return boxes.astype(np.float32), scores.astype(np.float32)
 
+
 class PeopleDetector(Node):
     def __init__(self):
         super().__init__('people_detector')
@@ -88,23 +90,26 @@ class PeopleDetector(Node):
             ('tracker_nn_budget', 100),                    # embedding cache size
         ])
 
-        (self.image_topic,
-         info_topic,
-         self.det_topic,
-         self.model_path,
-         self.input_size,
-         self.conf_thr,
-         self.iou_thr,
-         self.infer_every_n,
-         self.person_ids,
-         self.use_tracker,
-         self.trk_max_age,
-         self.trk_n_init,
-         self.trk_cos_thr,
-         self.trk_nn_budget) = [p.value for p in self.get_parameters([
-            'image_topic','camera_info_topic','det_topic','model_path','input_size',
-            'conf_threshold','iou_threshold','infer_every_n','person_class_ids',
-            'use_tracker','tracker_max_age','tracker_n_init','tracker_max_cosine_distance','tracker_nn_budget'
+        (
+            self.image_topic,
+            info_topic,
+            self.det_topic,
+            self.model_path,
+            self.input_size,
+            self.conf_thr,
+            self.iou_thr,
+            self.infer_every_n,
+            self.person_ids,
+            self.use_tracker,
+            self.trk_max_age,
+            self.trk_n_init,
+            self.trk_cos_thr,
+            self.trk_nn_budget,
+        ) = [p.value for p in self.get_parameters([
+            'image_topic', 'camera_info_topic', 'det_topic', 'model_path', 'input_size',
+            'conf_threshold', 'iou_threshold', 'infer_every_n', 'person_class_ids',
+            'use_tracker', 'tracker_max_age', 'tracker_n_init',
+            'tracker_max_cosine_distance', 'tracker_nn_budget'
         ])]
 
         # Annotations + debug image
@@ -251,10 +256,11 @@ class PeopleDetector(Node):
         # --- Optional tracking ---
         tracks = []
         if self.tracker is not None and kept:
-            # DeepSORT expects [x1,y1,x2,y2,score]
+            # DeepSORT expects a list of: [ [x1,y1,x2,y2], score, class ]
             ds_dets = []
             for (x, y, w, h), sc in kept:
-                ds_dets.append([x, y, x + w, y + h, sc])
+                bbox = [x, y, x + w, y + h]
+                ds_dets.append((bbox, float(sc), 0))  # class_id=0 (person)
             # Update with current frame (BGR)
             tracks = self.tracker.update_tracks(ds_dets, frame=img)
 
@@ -311,8 +317,8 @@ class PeopleDetector(Node):
             w = int(d.bbox.size_x)
             h = int(d.bbox.size_y)
             cv2.rectangle(dbg, (x, y), (x + w, y + h), color_box, 2)
-            label = d.results[0].hypothesis.class_id
             if d.results:
+                label = d.results[0].hypothesis.class_id
                 cv2.putText(dbg, label, (x, max(0, y - 5)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color_box, 1)
 
@@ -344,9 +350,11 @@ class PeopleDetector(Node):
                 Point2(x=float(x+w),   y=float(y+h)),
                 Point2(x=float(x),     y=float(y+h)),
             ]
-            pa.outline_color = Color(r=0, g=255, b=0, a=255)
+            # Color expects floats, not ints
+            pa.outline_color = Color(r=0.0, g=1.0, b=0.0, a=1.0)
             pa.thickness = 2.0
             anns.points.append(pa)
+
 
             if d.results:
                 txt = TextAnnotation()
@@ -356,6 +364,7 @@ class PeopleDetector(Node):
                 anns.texts.append(txt)
 
         self.pub_ann.publish(anns)
+
 
 def main():
     rclpy.init()

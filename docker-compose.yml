@@ -8,28 +8,26 @@ services:
     image: mecanumbot_camera:humble
     container_name: mecanumbot_camera_ros2
 
-    # 🟢 Use host network so ROS2 can talk to the mecanumbot over Wi-Fi
-    network_mode: host
-
     working_dir: /ws
     stdin_open: true
     tty: true
 
-    # 🧠 Mount your repo as /ws/src/mecanumbot_camera for live dev
     volumes:
-      - .:/ws/src/mecanumbot_camera
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw   # For GUI apps (rqt, image_view, etc.)
+      - ./src:/ws/src
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
 
     environment:
-      # --- ROS 2 network setup ---
-      - ROS_DOMAIN_ID=0
+      # ROS networking
+      - ROS_DOMAIN_ID=19
       - ROS_LOCALHOST_ONLY=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-      # --- Display / GUI support ---
-      - DISPLAY=host.docker.internal:0.0
+      # GUI
+      - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
       - LIBGL_ALWAYS_INDIRECT=1
 
-    # 🧱 Keep the container alive and source ROS env
     entrypoint: /bin/bash
     command: -c "source /root/.bashrc && sleep infinity"
+    ports:
+      - "8765:8765"
