@@ -4,6 +4,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from vision_msgs.msg import Detection2DArray
 from rclpy.qos import QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Float64
 import math
 
 
@@ -24,9 +25,10 @@ class BehaviorManager(Node):
         self.image_width = 640
 
         # Ball thresholds — hysteresis
-        # NOTE: for real robot you probably want ~100 / 130 here, now lowered for sample video.
-        self.fetch_enter_px = 20   # TRACK → FETCH # 100
-        self.fetch_stop_px = 40    # FETCH → GRASP # 130-150
+        # NOTE: for real robot you probably want ~100 / 130 here,
+        # now lowered for sample video tests.
+        self.fetch_enter_px = 20   # TRACK → FETCH   (roboton majd pl. 100)
+        self.fetch_stop_px = 40    # FETCH → GRASP   (roboton majd pl. 130–150)
 
         self.ball_lost_timeout = 1.0
 
@@ -57,11 +59,15 @@ class BehaviorManager(Node):
         self.grasp_duration = 1.0    # seconds to wait while "closing" gripper
         self.grasp_start_time = None
 
+        # Deliver state helper (so we only open once)
+        self.deliver_open_done = False
+
         # FSM
         self.state = BehaviorState.SEARCH
 
-        # Publisher
+        # Publishers
         self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        self.gripper_pub = self.create_publisher(Float64, "/gripper_controller/commands", 10)
 
         # QoS
         qos = QoSProfile(depth=10)
@@ -120,15 +126,19 @@ class BehaviorManager(Node):
         self.last_person_time = self.now()
 
     # ==========================================================
-    # GRIPPER HELPERS (stub – later connect to real robot)
+    # GRIPPER HELPERS
     # ==========================================================
     def open_gripper(self):
-        # TODO: replace this with real ROS interface (publisher / service / action)
-        self.get_logger().info("[GRIPPER] open_gripper() called (stub)")
+        msg = Float64()
+        msg.data = 1.0
+        self.gripper_pub.publish(msg)
+        self.get_logger().info("[GRIPPER] open (1.0)")
 
     def close_gripper(self):
-        # TODO: replace this with real ROS interface
-        self.get_logger().info("[GRIPPER] close_gripper() called (stub)")
+        msg = Float64()
+        msg.data = 0.0
+        self.gripper_pub.publish(msg)
+        self.get_logger().info("[GRIPPER] close (0.0)")
 
     # ==========================================================
     # CONTROL LOOP — MAIN FSM
@@ -145,6 +155,9 @@ class BehaviorManager(Node):
         # SEARCH
         # ------------------------------------------------------
         if self.state == BehaviorState.SEARCH:
+            # reset deliver flag so next run can open again
+            self.deliver_open_done = False
+
             twist.angular.z = self.search_speed
 
             if ball_seen:
@@ -223,6 +236,11 @@ class BehaviorManager(Node):
         elif self.state == BehaviorState.DELIVER:
             # final state — stay still
             twist = Twist()
+
+            # Only open gripper once when entering DELIVER
+            if not self.deliver_open_done:
+                self.open_gripper()
+                self.deliver_open_done = True
 
         # Publish twist
         self.cmd_pub.publish(twist)
