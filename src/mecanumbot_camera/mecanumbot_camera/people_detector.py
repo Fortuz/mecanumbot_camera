@@ -230,6 +230,10 @@ class PeopleDetector(Node):
             return
 
         pred = outs[0]
+        # Fix YOLOv8 ONNX (1,84,8400) output format
+        if pred.ndim == 3 and pred.shape[1] == 84:
+            pred = pred[0].transpose(1, 0)   # → (8400, 84)
+
         boxes_cxcywh, person_scores = parse_yolo_outputs(
             pred,
             num_classes=80,
