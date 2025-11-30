@@ -25,8 +25,8 @@ class BehaviorManager(Node):
 
         # Ball thresholds — hysteresis
         # NOTE: for real robot you probably want ~100 / 130 here, now lowered for sample video.
-        self.fetch_enter_px = 20   # TRACK → FETCH
-        self.fetch_stop_px = 40    # FETCH → GRASP
+        self.fetch_enter_px = 20   # TRACK → FETCH # 100
+        self.fetch_stop_px = 40    # FETCH → GRASP # 130-150
 
         self.ball_lost_timeout = 1.0
 
