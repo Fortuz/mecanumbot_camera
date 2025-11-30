@@ -225,6 +225,8 @@ class BehaviorManager(Node):
                     self.get_logger().info("Owner reached → DELIVER")
                     self.state = BehaviorState.DELIVER
                     twist = Twist()  # stop
+                    self.deliver_open_done = False     # reset open flag
+                    self.deliver_start_time = now      # track how long we're in DELIVER
 
             else:
                 # rotate and search for person
@@ -241,6 +243,13 @@ class BehaviorManager(Node):
             if not self.deliver_open_done:
                 self.open_gripper()
                 self.deliver_open_done = True
+
+            # after opening, restart the cycle
+            # simple approach: wait a little then back to SEARCH
+            if (now - self.deliver_start_time) > 1.0:
+                self.get_logger().info("Delivery complete → SEARCH")
+                self.state = BehaviorState.SEARCH
+                self.deliver_open_done = False
 
         # Publish twist
         self.cmd_pub.publish(twist)
