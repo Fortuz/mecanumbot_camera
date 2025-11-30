@@ -11,6 +11,7 @@ class BehaviorState:
     SEARCH = "SEARCH"
     TRACK_BALL = "TRACK_BALL"
     FETCH = "FETCH"
+    GRASP = "GRASP"
     FIND_OWNER = "FIND_OWNER"
     DELIVER = "DELIVER"
 
@@ -22,9 +23,10 @@ class BehaviorManager(Node):
         # ------- PARAMETERS -------
         self.image_width = 640
 
-        # Ball thresholds — hiszterézis beépítve
-        self.fetch_enter_px = 100       # TRACK → FETCH
-        self.fetch_stop_px = 130        # FETCH → FIND_OWNER
+        # Ball thresholds — hysteresis
+        # NOTE: for real robot you probably want ~100 / 130 here, now lowered for sample video.
+        self.fetch_enter_px = 20   # TRACK → FETCH
+        self.fetch_stop_px = 40    # FETCH → GRASP
 
         self.ball_lost_timeout = 1.0
 
@@ -38,7 +40,7 @@ class BehaviorManager(Node):
         self.search_speed = 0.25
 
         # Person thresholds
-        self.owner_threshold_px = 150     # DELIVER akkor, ha ilyen nagy a bbox
+        self.owner_threshold_px = 150     # DELIVER when bbox this big
         self.person_lost_timeout = 1.0
 
         # Ball state
@@ -50,6 +52,10 @@ class BehaviorManager(Node):
         self.last_person_time = -1e9
         self.person_center_x = None
         self.person_width_px = 0.0
+
+        # Grasp state
+        self.grasp_duration = 1.0    # seconds to wait while "closing" gripper
+        self.grasp_start_time = None
 
         # FSM
         self.state = BehaviorState.SEARCH
@@ -90,7 +96,7 @@ class BehaviorManager(Node):
     # ==========================================================
     # BALL CALLBACK
     # ==========================================================
-    def ball_callback(self, msg):
+    def ball_callback(self, msg: Detection2DArray):
         if not msg.detections:
             return
 
@@ -103,7 +109,7 @@ class BehaviorManager(Node):
     # ==========================================================
     # PERSON CALLBACK
     # ==========================================================
-    def person_callback(self, msg):
+    def person_callback(self, msg: Detection2DArray):
         if not msg.detections:
             return
 
@@ -112,6 +118,17 @@ class BehaviorManager(Node):
         self.person_center_x = det.bbox.center.position.x
         self.person_width_px = det.bbox.size_x
         self.last_person_time = self.now()
+
+    # ==========================================================
+    # GRIPPER HELPERS (stub – later connect to real robot)
+    # ==========================================================
+    def open_gripper(self):
+        # TODO: replace this with real ROS interface (publisher / service / action)
+        self.get_logger().info("[GRIPPER] open_gripper() called (stub)")
+
+    def close_gripper(self):
+        # TODO: replace this with real ROS interface
+        self.get_logger().info("[GRIPPER] close_gripper() called (stub)")
 
     # ==========================================================
     # CONTROL LOOP — MAIN FSM
@@ -151,7 +168,7 @@ class BehaviorManager(Node):
                     self.get_logger().info("→ FETCH")
 
         # ------------------------------------------------------
-        # FETCH
+        # FETCH — refine position, approach ball slowly
         # ------------------------------------------------------
         elif self.state == BehaviorState.FETCH:
             if not ball_seen:
@@ -161,10 +178,26 @@ class BehaviorManager(Node):
             else:
                 twist = self.compute_ball_control(slow=True)
 
-                # Leave FETCH when ball is very close (hysteresis)
+                # When very close to the ball, stop and go to GRASP
                 if self.ball_width_px >= self.fetch_stop_px:
-                    self.cmd_pub.publish(Twist())  # stop
-                    self.get_logger().info("Ball fetched! → FIND_OWNER")
+                    self.cmd_pub.publish(Twist())  # hard stop
+                    self.get_logger().info("Ball reached → GRASP")
+                    self.state = BehaviorState.GRASP
+                    self.start_grasp(now)
+
+        # ------------------------------------------------------
+        # GRASP — close gripper and wait a bit
+        # ------------------------------------------------------
+        elif self.state == BehaviorState.GRASP:
+            # We stand still while closing the gripper
+            twist = Twist()
+
+            # If somehow grasp_start_time is None, initialize it
+            if self.grasp_start_time is None:
+                self.start_grasp(now)
+            else:
+                if (now - self.grasp_start_time) >= self.grasp_duration:
+                    self.get_logger().info("Grasp done → FIND_OWNER")
                     self.state = BehaviorState.FIND_OWNER
 
         # ------------------------------------------------------
@@ -194,10 +227,15 @@ class BehaviorManager(Node):
         # Publish twist
         self.cmd_pub.publish(twist)
 
+    def start_grasp(self, now: float):
+        """Called once when entering GRASP state."""
+        self.close_gripper()
+        self.grasp_start_time = now
+
     # ==========================================================
     # CONTROL HELPERS
     # ==========================================================
-    def compute_ball_control(self, slow=False):
+    def compute_ball_control(self, slow: bool = False) -> Twist:
         twist = Twist()
 
         if self.ball_center_x is None:
@@ -224,7 +262,7 @@ class BehaviorManager(Node):
         twist.linear.x = lin
         return twist
 
-    def compute_person_control(self):
+    def compute_person_control(self) -> Twist:
         twist = Twist()
 
         if self.person_center_x is None:
