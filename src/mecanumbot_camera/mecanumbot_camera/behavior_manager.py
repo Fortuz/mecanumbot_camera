@@ -4,7 +4,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from vision_msgs.msg import Detection2DArray
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-import time
+import math
 
 
 class BehaviorState:
@@ -22,26 +22,32 @@ class BehaviorManager(Node):
         # ------- PARAMETERS -------
         self.image_width = 640
 
-        # Ball
-        self.fetch_threshold_px = 110
+        # Ball thresholds — hiszterézis beépítve
+        self.fetch_enter_px = 100       # TRACK → FETCH
+        self.fetch_stop_px = 130        # FETCH → FIND_OWNER
+
         self.ball_lost_timeout = 1.0
+
+        # Control gains
         self.Kp_rot = 0.0025
         self.Kp_fwd = 0.015
+
         self.max_ang = 0.8
-        self.max_lin = 0.3
+        self.max_lin = 0.30
+
         self.search_speed = 0.25
 
-        # Person
-        self.owner_threshold_px = 150       # how big bbox means "very close"
+        # Person thresholds
+        self.owner_threshold_px = 150     # DELIVER akkor, ha ilyen nagy a bbox
         self.person_lost_timeout = 1.0
 
         # Ball state
-        self.last_ball_time = 0.0
+        self.last_ball_time = -1e9
         self.ball_center_x = None
         self.ball_width_px = 0.0
 
         # Person state
-        self.last_person_time = 0.0
+        self.last_person_time = -1e9
         self.person_center_x = None
         self.person_width_px = 0.0
 
@@ -71,8 +77,15 @@ class BehaviorManager(Node):
 
         self.get_logger().info("Behavior Manager initialized.")
 
-        # Timer
+        # Timer (10 Hz)
         self.control_timer = self.create_timer(0.1, self.control_loop)
+
+    # ==========================================================
+    # TIME HELPER
+    # ==========================================================
+    def now(self):
+        """Return ROS time in seconds (safer than time.time())."""
+        return self.get_clock().now().nanoseconds * 1e-9
 
     # ==========================================================
     # BALL CALLBACK
@@ -85,7 +98,7 @@ class BehaviorManager(Node):
 
         self.ball_center_x = det.bbox.center.position.x
         self.ball_width_px = det.bbox.size_x
-        self.last_ball_time = time.time()
+        self.last_ball_time = self.now()
 
     # ==========================================================
     # PERSON CALLBACK
@@ -98,13 +111,13 @@ class BehaviorManager(Node):
 
         self.person_center_x = det.bbox.center.position.x
         self.person_width_px = det.bbox.size_x
-        self.last_person_time = time.time()
+        self.last_person_time = self.now()
 
     # ==========================================================
-    # CONTROL LOOP
+    # CONTROL LOOP — MAIN FSM
     # ==========================================================
     def control_loop(self):
-        now = time.time()
+        now = self.now()
 
         ball_seen = (now - self.last_ball_time) < self.ball_lost_timeout
         person_seen = (now - self.last_person_time) < self.person_lost_timeout
@@ -126,33 +139,36 @@ class BehaviorManager(Node):
         # ------------------------------------------------------
         elif self.state == BehaviorState.TRACK_BALL:
             if not ball_seen:
-                self.state = BehaviorState.SEARCH
                 self.get_logger().info("Ball lost → SEARCH")
+                self.state = BehaviorState.SEARCH
+
             else:
                 twist = self.compute_ball_control()
 
-                if self.ball_width_px >= self.fetch_threshold_px:
+                # Enter FETCH when ball reasonably close
+                if self.ball_width_px >= self.fetch_enter_px:
                     self.state = BehaviorState.FETCH
                     self.get_logger().info("→ FETCH")
 
         # ------------------------------------------------------
-        # FETCH (approach ball slowly)
+        # FETCH
         # ------------------------------------------------------
         elif self.state == BehaviorState.FETCH:
             if not ball_seen:
-                self.state = BehaviorState.SEARCH
                 self.get_logger().info("Ball lost during FETCH → SEARCH")
+                self.state = BehaviorState.SEARCH
+
             else:
                 twist = self.compute_ball_control(slow=True)
 
-                if self.ball_width_px >= self.fetch_threshold_px:
-                    twist = Twist()
-                    self.cmd_pub.publish(twist)
+                # Leave FETCH when ball is very close (hysteresis)
+                if self.ball_width_px >= self.fetch_stop_px:
+                    self.cmd_pub.publish(Twist())  # stop
                     self.get_logger().info("Ball fetched! → FIND_OWNER")
                     self.state = BehaviorState.FIND_OWNER
 
         # ------------------------------------------------------
-        # FIND_OWNER (rotate until person seen)
+        # FIND_OWNER
         # ------------------------------------------------------
         elif self.state == BehaviorState.FIND_OWNER:
 
@@ -163,17 +179,19 @@ class BehaviorManager(Node):
                     self.get_logger().info("Owner reached → DELIVER")
                     self.state = BehaviorState.DELIVER
                     twist = Twist()  # stop
+
             else:
+                # rotate and search for person
                 twist.angular.z = self.search_speed
 
         # ------------------------------------------------------
         # DELIVER
         # ------------------------------------------------------
         elif self.state == BehaviorState.DELIVER:
-            twist = Twist()   # stand still
-            # Here later we will add forward motion or hand-off motion
+            # final state — stay still
+            twist = Twist()
 
-        # Publish
+        # Publish twist
         self.cmd_pub.publish(twist)
 
     # ==========================================================
@@ -181,18 +199,21 @@ class BehaviorManager(Node):
     # ==========================================================
     def compute_ball_control(self, slow=False):
         twist = Twist()
+
         if self.ball_center_x is None:
             return twist
 
         center = self.image_width / 2
         err = self.ball_center_x - center
 
+        # Angular control
         ang = -self.Kp_rot * err
         ang = max(min(ang, self.max_ang), -self.max_ang)
 
+        # Linear control
         lin = 0.0
-        if self.ball_width_px < self.fetch_threshold_px:
-            lin = self.Kp_fwd * (self.fetch_threshold_px - self.ball_width_px)
+        if self.ball_width_px < self.fetch_stop_px:
+            lin = self.Kp_fwd * (self.fetch_stop_px - self.ball_width_px)
             lin = max(min(lin, self.max_lin), 0.0)
 
         if slow:
@@ -205,6 +226,7 @@ class BehaviorManager(Node):
 
     def compute_person_control(self):
         twist = Twist()
+
         if self.person_center_x is None:
             return twist
 
