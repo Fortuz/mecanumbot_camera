@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from .camera_h264_reader import H264Camera
+from .camera_picam_reader import PiCamReader
 import time
 
 class VideoPublisher(Node):
@@ -13,7 +13,7 @@ class VideoPublisher(Node):
         self.bridge = CvBridge()
         self.pub = self.create_publisher(Image, '/camera/image_raw', 10)
 
-        self.cam = H264Camera(width=640, height=480, fps=30)
+        self.cam = PiCamReader(width=640, height=480, fps=30)
 
         self.timer = self.create_timer(1/30.0, self.tick)
 
