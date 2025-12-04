@@ -6,7 +6,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 from cv_bridge import CvBridge
-from foxglove_msgs.msg import ImageAnnotations, PointsAnnotation, Point2, Color, TextAnnotation
+#from foxglove_msgs.msg import ImageAnnotations, PointsAnnotation, Point2, Color, TextAnnotation
 
 try:
     import onnxruntime as ort
@@ -113,8 +113,8 @@ class PeopleDetector(Node):
         ])]
 
         # Annotations + debug image
-        self.ann_topic = self.declare_parameter('ann_topic', '/camera/annotations').get_parameter_value().string_value
-        self.pub_ann = self.create_publisher(ImageAnnotations, self.ann_topic, 10)
+        #self.ann_topic = self.declare_parameter('ann_topic', '/camera/annotations').get_parameter_value().string_value
+        #self.pub_ann = self.create_publisher(ImageAnnotations, self.ann_topic, 10)
         self.debug_topic = self.declare_parameter('people_debug_topic', '/camera/people_debug').get_parameter_value().string_value
         self.pub_dbg = self.create_publisher(Image, self.debug_topic, 10)
 
@@ -208,7 +208,7 @@ class PeopleDetector(Node):
 
         # throttle or no model → publish empty (but keep cadence)
         if self.session is None or (self.frame_idx % max(1, int(self.infer_every_n)) != 0):
-            self._publish_annotations_and_images(img=None, dets=dets_msg)
+            #self._publish_annotations_and_images(img=None, dets=dets_msg)
             self.pub_det.publish(dets_msg)
             return
 
@@ -331,10 +331,11 @@ class PeopleDetector(Node):
         dbg_msg.header.frame_id = dets_msg.header.frame_id
         self.pub_dbg.publish(dbg_msg)
 
-        self._publish_annotations_and_images(img=dbg, dets=dets_msg)
+        #self._publish_annotations_and_images(img=dbg, dets=dets_msg)
         self.pub_det.publish(dets_msg)
 
     # ------------ Foxglove annotation helper ------------
+    '''
     def _publish_annotations_and_images(self, img, dets: Detection2DArray):
         anns = ImageAnnotations()
         anns.points = []
@@ -368,7 +369,7 @@ class PeopleDetector(Node):
                 anns.texts.append(txt)
 
         self.pub_ann.publish(anns)
-
+    '''
 
 def main():
     rclpy.init()

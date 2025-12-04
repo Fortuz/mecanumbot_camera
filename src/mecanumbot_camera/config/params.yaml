@@ -17,7 +17,8 @@ people_detector:
     ann_topic: /camera/annotations
     people_debug_topic: /camera/people_debug
     det_topic: "/detections/person"
-    model_path: "/ws/src/mecanumbot_camera/models/yolov8n.onnx"  # <— inside the container
+    #model_path: "/ws/src/mecanumbot_camera/models/yolov8n.onnx"  # <— inside the container
+    model_path: "/home/pi/mecanum_ws/src/mecanumbot_camera/src/mecanumbot_camera/models/yolov8n.onnx"
     input_size: [640, 640]
     conf_threshold: 0.25
     iou_threshold: 0.45
