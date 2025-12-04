@@ -31,7 +31,6 @@ setup(
     maintainer_email='newageson@inf.elte.hu',
     description='Camera + perception + tracking pipeline for mecanumbot.',
     license='Apache License 2.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'ball_tracker_rgb = mecanumbot_camera.ball_tracker_rgb:main',
