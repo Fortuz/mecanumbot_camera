@@ -5,6 +5,9 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from .camera_picam_reader import PiCamReader
 import time
+import cv2
+import numpy as np
+
 
 class VideoPublisher(Node):
     def __init__(self):
@@ -22,6 +25,19 @@ class VideoPublisher(Node):
         if frame is None:
             self.get_logger().warn("No frame received yet.")
             return
+
+        # BGR → HSV
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        h, s, v = cv2.split(hsv)
+
+        # Hue eltolása (60 jó kezdet, ha sok: 40–80 között lehet állítani)
+        h = (h.astype(np.int16) + 60) % 180
+        h = h.astype(np.uint8)
+
+        # HSV → BGR vissza
+        hsv_corr = cv2.merge([h, s, v])
+        frame = cv2.cvtColor(hsv_corr, cv2.COLOR_HSV2BGR)
+        # --- Színkorrekció vége ---
 
         msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
         msg.header.stamp = self.get_clock().now().to_msg()
