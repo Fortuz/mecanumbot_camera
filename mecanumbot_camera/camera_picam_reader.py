@@ -19,9 +19,14 @@ class PiCamReader:
     def read(self):
         try:
             frame = self.picam2.capture_array()
+
+            # FIX: channels (IMX708 wide bug)
+            frame = frame[..., [1, 0, 2]]  # G, R, B
+
             return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         except:
             return None
+
 
     def stop(self):
         self.picam2.stop()
