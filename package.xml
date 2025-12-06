@@ -7,6 +7,15 @@
   <maintainer email="newageson@inf.elte.hu">Roland Sándor Nagy</maintainer>
   <license>Apache-2.0</license>
 
+  <build_depend>vision_msgs</build_depend>
+  <exec_depend>vision_msgs</exec_depend>
+
+  <build_depend>cv_bridge</build_depend>
+  <exec_depend>cv_bridge</exec_depend>
+
+  <build_depend>image_geometry</build_depend>
+  <exec_depend>image_geometry</exec_depend>
+
   <export>
     <build_type>ament_python</build_type>
   </export>
