@@ -66,7 +66,7 @@ class PeopleDetectorTFLite(Node):
         self.declare_parameter("det_topic", "/detections/person")
         self.declare_parameter("model_path", "ssd_mobilenet_v1.tflite")
         #self.declare_parameter("conf_threshold", 0.4)
-        self.declare_parameter("conf_threshold", 0.6)
+        self.declare_parameter("conf_threshold", 0.85)
         self.declare_parameter("infer_every_n", 1)
 
         self.image_topic = self.get_parameter("image_topic").value
@@ -161,19 +161,22 @@ class PeopleDetectorTFLite(Node):
 
 
         # -------- Postprocess --------
+
+        has_person = 0 in classes[:num]
+        if has_person == False:
+            self.pub_det.publish(dets_msg)
+            pass
+
         detections = []
+
         for i in range(num):
             cls = int(classes[i])
             score = float(scores[i])
-            #if score < self.conf_thr or cls != PERSON_CLASS_ID:
-            #    continue
-            #if cls != 1:   # person class
-            #    continue
+
             if score < self.conf_thr:
                 continue
 
-            # Try both class IDs commonly used
-            if cls not in (0, 1):
+            if cls != 0:
                 continue
 
             ymin, xmin, ymax, xmax = boxes[i]
@@ -185,7 +188,7 @@ class PeopleDetectorTFLite(Node):
 
             detections.append((x, y, bw, bh, score))
 
-        # -------- Publish detections --------
+        # -------- Publish detections (always AFTER NMS) --------
         for (x, y, bw, bh, sc) in detections:
             d = Detection2D()
             d.header = img_msg.header
@@ -193,23 +196,13 @@ class PeopleDetectorTFLite(Node):
             d.bbox.center.position.y = y + bh / 2
             d.bbox.size_x = bw
             d.bbox.size_y = bh
+
             hyp = ObjectHypothesisWithPose()
             hyp.hypothesis.class_id = "person"
             hyp.hypothesis.score = sc
             d.results.append(hyp)
+
             dets_msg.detections.append(d)
-
-        if detections:
-            boxes_xyxy = []
-            scores_list = []
-
-            for (x, y, bw, bh, sc) in detections:
-                boxes_xyxy.append([x, y, x + bw, y + bh])
-                scores_list.append(sc)
-
-            keep = nms(boxes_xyxy, scores_list, iou_threshold=0.5)
-
-            detections = [detections[i] for i in keep]
 
         # -------- Debug overlay --------
         dbg = img.copy()
@@ -219,6 +212,9 @@ class PeopleDetectorTFLite(Node):
             x2 = int(x + bw)
             y2 = int(y + bh)
             cv2.rectangle(dbg, (x1, y1), (x2, y2), (0,255,0), 2)
+
+        self.get_logger().info(f"CLASSES: {classes[:num]}")
+        self.get_logger().info(f"SCORES: {scores[:num]}")
 
         self.pub_det.publish(dets_msg)
         self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))
