@@ -165,7 +165,7 @@ class PeopleDetectorTFLite(Node):
         has_person = 0 in classes[:num]
         if has_person == False:
             self.pub_det.publish(dets_msg)
-            pass
+            return
 
         detections = []
 
