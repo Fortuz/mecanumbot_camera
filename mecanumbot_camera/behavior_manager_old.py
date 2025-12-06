@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from vision_msgs.msg import Detection2DArray
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Float64, ColorRGBA
+import math
+
+
+class BehaviorState:
+    SEARCH = "SEARCH"
+    TRACK_BALL = "TRACK_BALL"
+    FETCH = "FETCH"
+    GRASP = "GRASP"
+    FIND_OWNER = "FIND_OWNER"
+    DELIVER = "DELIVER"
+
+
+class BehaviorManager(Node):
+    def __init__(self):
+        super().__init__("behavior_manager")
+
+        # ------- PARAMETERS -------
+        self.image_width = 640
+
+        # Ball thresholds — hysteresis
+        # NOTE: for real robot you probably want ~100 / 130 here,
+        # now lowered for sample video tests.
+        self.fetch_enter_px = 200   # TRACK → FETCH   (roboton majd pl. 100)
+        self.fetch_stop_px = 280    # FETCH → GRASP   (roboton majd pl. 130–150)
+
+        self.ball_lost_timeout = 1.0
+
+        # Control gains
+        self.Kp_rot = 0.0025
+        self.Kp_fwd = 0.015
+
+        self.max_ang = 0.8
+        self.max_lin = 0.30
+
+        self.search_speed = 0.25
+
+        # Person thresholds
+        self.owner_threshold_px = 150     # DELIVER when bbox this big
+        self.person_lost_timeout = 1.0
+
+        # Ball state
+        self.last_ball_time = -1e9
+        self.ball_center_x = None
+        self.ball_width_px = 0.0
+
+        # Person state
+        self.last_person_time = -1e9
+        self.person_center_x = None
+        self.person_width_px = 0.0
+
+        # Grasp state
+        self.grasp_duration = 1.0    # seconds to wait while "closing" gripper
+        self.grasp_start_time = None
+
+        # Deliver state helper (so we only open once)
+        self.deliver_open_done = False
+
+        # FSM
+        self.state = BehaviorState.SEARCH
+
+        # LED Feedback
+        self.led_pub = self.create_publisher(ColorRGBA, "/mecanumbot_led/commands", 10)
+
+        # Publishers
+        self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        self.gripper_pub = self.create_publisher(Float64, "/gripper_controller/commands", 10)
+
+        # QoS
+        qos = QoSProfile(depth=10)
+        qos.reliability = ReliabilityPolicy.BEST_EFFORT
+
+        # Subscriptions
+        self.create_subscription(
+            Detection2DArray,
+            "/detections/ball",
+            self.ball_callback,
+            qos
+        )
+        self.create_subscription(
+            Detection2DArray,
+            "/detections/person",
+            self.person_callback,
+            qos
+        )
+
+        self.get_logger().info("Behavior Manager initialized.")
+
+        # Timer (10 Hz)
+        self.control_timer = self.create_timer(0.1, self.control_loop)
+
+
+    # ==========================================================
+    # LED HELPER
+    # ==========================================================
+    def set_led(self, r, g, b, a=1.0):
+        msg = ColorRGBA()
+        msg.r = float(r)
+        msg.g = float(g)
+        msg.b = float(b)
+        msg.a = float(a)
+        self.led_pub.publish(msg)
+
+    # ==========================================================
+    # TIME HELPER
+    # ==========================================================
+    def now(self):
+        """Return ROS time in seconds (safer than time.time())."""
+        return self.get_clock().now().nanoseconds * 1e-9
+
+    # ==========================================================
+    # BALL CALLBACK
+    # ==========================================================
+    def ball_callback(self, msg: Detection2DArray):
+        if not msg.detections:
+            return
+
+        det = max(msg.detections, key=lambda d: d.bbox.size_x)
+
+        self.ball_center_x = det.bbox.center.position.x
+        self.ball_width_px = det.bbox.size_x
+        self.last_ball_time = self.now()
+
+    # ==========================================================
+    # PERSON CALLBACK
+    # ==========================================================
+    def person_callback(self, msg: Detection2DArray):
+        if not msg.detections:
+            return
+
+        det = max(msg.detections, key=lambda d: d.bbox.size_x)
+
+        self.person_center_x = det.bbox.center.position.x
+        self.person_width_px = det.bbox.size_x
+        self.last_person_time = self.now()
+
+    # ==========================================================
+    # GRIPPER HELPERS
+    # ==========================================================
+    def open_gripper(self):
+        msg = Float64()
+        msg.data = 1.0
+        self.gripper_pub.publish(msg)
+        self.get_logger().info("[GRIPPER] open (1.0)")
+
+    def close_gripper(self):
+        msg = Float64()
+        msg.data = 0.0
+        self.gripper_pub.publish(msg)
+        self.get_logger().info("[GRIPPER] close (0.0)")
+
+    # ==========================================================
+    # CONTROL LOOP — MAIN FSM
+    # ==========================================================
+    def control_loop(self):
+        now = self.now()
+
+        ball_seen = (now - self.last_ball_time) < self.ball_lost_timeout
+        person_seen = (now - self.last_person_time) < self.person_lost_timeout
+
+        twist = Twist()
+
+        # ------------------------------------------------------
+        # SEARCH
+        # ------------------------------------------------------
+        if self.state == BehaviorState.SEARCH:
+            if (now - self.last_ball_time) > 10.0 and (now - self.last_person_time) > 10.0:
+                self.set_led(1.0, 0.0, 0.0)  # red - idle timeout
+            else:
+                self.set_led(0.0, 0.0, 1.0)  # blue - searching
+
+            # reset deliver flag so next run can open again
+            self.deliver_open_done = False
+
+            twist.angular.z = self.search_speed
+
+            if ball_seen:
+                self.set_led(0.0, 1.0, 0.0)  # green
+                self.state = BehaviorState.TRACK_BALL
+                self.get_logger().info("→ TRACK_BALL")
+
+        # ------------------------------------------------------
+        # TRACK_BALL
+        # ------------------------------------------------------
+        elif self.state == BehaviorState.TRACK_BALL:
+            if not ball_seen:
+                self.set_led(0.0, 0.0, 1.0)  # blue - SEARCH
+                self.get_logger().info("Ball lost → SEARCH")
+                self.state = BehaviorState.SEARCH
+
+            else:
+                twist = self.compute_ball_control()
+
+                # Enter FETCH when ball reasonably close
+                if self.ball_width_px >= self.fetch_enter_px:
+                    self.set_led(0.0, 0.6, 0.0)
+                    self.state = BehaviorState.FETCH
+                    self.get_logger().info("→ FETCH")
+
+        # ------------------------------------------------------
+        # FETCH — refine position, approach ball slowly
+        # ------------------------------------------------------
+        elif self.state == BehaviorState.FETCH:
+            if not ball_seen:
+                self.set_led(0.0, 0.0, 1.0)  # blue - SEARCH
+                self.get_logger().info("Ball lost during FETCH → SEARCH")
+                self.state = BehaviorState.SEARCH
+
+            else:
+                twist = self.compute_ball_control(slow=True)
+
+                # When very close to the ball, stop and go to GRASP
+                if self.ball_width_px >= self.fetch_stop_px:
+                    self.set_led(1.0, 1.0, 0.0)  # yellow
+                    self.cmd_pub.publish(Twist())  # hard stop
+                    self.get_logger().info("Ball reached → GRASP")
+                    self.state = BehaviorState.GRASP
+                    self.start_grasp(now)
+
+        # ------------------------------------------------------
+        # GRASP — close gripper and wait a bit
+        # ------------------------------------------------------
+        elif self.state == BehaviorState.GRASP:
+            # We stand still while closing the gripper
+            twist = Twist()
+
+            # If somehow grasp_start_time is None, initialize it
+            if self.grasp_start_time is None:
+                self.start_grasp(now)
+            else:
+                if (now - self.grasp_start_time) >= self.grasp_duration:
+                    self.set_led(0.6, 0.0, 0.6)  # purple
+                    self.get_logger().info("Grasp done → FIND_OWNER")
+                    self.state = BehaviorState.FIND_OWNER
+
+        # ------------------------------------------------------
+        # FIND_OWNER
+        # ------------------------------------------------------
+        elif self.state == BehaviorState.FIND_OWNER:
+            if person_seen:
+                twist = self.compute_person_control()
+
+                if self.person_width_px >= self.owner_threshold_px:
+                    self.set_led(1.0, 1.0, 1.0)  # white
+                    self.get_logger().info("Owner reached → DELIVER")
+                    self.state = BehaviorState.DELIVER
+                    twist = Twist()  # stop
+                    self.deliver_open_done = False     # reset open flag
+                    self.deliver_start_time = now      # track how long we're in DELIVER
+
+            else:
+                # rotate and search for person
+                twist.angular.z = self.search_speed
+
+        # ------------------------------------------------------
+        # DELIVER
+        # ------------------------------------------------------
+        elif self.state == BehaviorState.DELIVER:
+            # final state — stay still
+            twist = Twist()
+
+            # Only open gripper once when entering DELIVER
+            if not self.deliver_open_done:
+                self.open_gripper()
+                self.deliver_open_done = True
+
+            # after opening, restart the cycle
+            # simple approach: wait a little then back to SEARCH
+            if (now - self.deliver_start_time) > 1.0:
+                self.set_led(0.0, 0.0, 1.0)  # blue
+                self.get_logger().info("Delivery complete → SEARCH")
+                self.state = BehaviorState.SEARCH
+                self.deliver_open_done = False
+
+        else:
+            self.set_led(1.0, 0.0, 0.0)  # red
+            self.get_logger().error("Unknown state!")
+            self.state = BehaviorState.SEARCH
+
+        # Publish twist
+        self.cmd_pub.publish(twist)
+
+    def start_grasp(self, now: float):
+        """Called once when entering GRASP state."""
+        self.close_gripper()
+        self.grasp_start_time = now
+
+    # ==========================================================
+    # CONTROL HELPERS
+    # ==========================================================
+    def compute_ball_control(self, slow: bool = False) -> Twist:
+        twist = Twist()
+
+        if self.ball_center_x is None:
+            return twist
+
+        center = self.image_width / 2
+        err = self.ball_center_x - center
+
+        # Angular control
+        ang = -self.Kp_rot * err
+        ang = max(min(ang, self.max_ang), -self.max_ang)
+
+        # Linear control
+        lin = 0.0
+        if self.ball_width_px < self.fetch_stop_px:
+            lin = self.Kp_fwd * (self.fetch_stop_px - self.ball_width_px)
+            lin = max(min(lin, self.max_lin), 0.0)
+
+        if slow:
+            ang *= 0.5
+            lin *= 0.5
+
+        twist.angular.z = ang
+        twist.linear.x = lin
+        return twist
+
+    def compute_person_control(self) -> Twist:
+        twist = Twist()
+
+        if self.person_center_x is None:
+            return twist
+
+        center = self.image_width / 2
+        err = self.person_center_x - center
+
+        ang = -self.Kp_rot * err
+        ang = max(min(ang, self.max_ang), -self.max_ang)
+
+        lin = 0.0
+        if self.person_width_px < self.owner_threshold_px:
+            lin = self.Kp_fwd * (self.owner_threshold_px - self.person_width_px)
+            lin = max(min(lin, self.max_lin), 0.0)
+
+        twist.angular.z = ang
+        twist.linear.x = lin
+        return twist
+
+
+def main():
+    rclpy.init()
+    node = BehaviorManager()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

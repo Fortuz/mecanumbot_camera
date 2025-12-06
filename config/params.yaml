@@ -18,8 +18,10 @@ people_detector:
     people_debug_topic: /camera/people_debug
     det_topic: "/detections/person"
     #model_path: "/ws/src/mecanumbot_camera/models/yolov8n.onnx"  # <— inside the container
-    model_path: "/home/pi/mecanum_ws/src/mecanumbot_camera/src/mecanumbot_camera/models/yolov8n.onnx"
-    input_size: [640, 640]
+    #model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/yolov8n.onnx"
+    #model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/yolov4-tiny.onnx"
+    model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/ssd_mobilenet_v1_10.onnx"
+    input_size: [416, 416]
     conf_threshold: 0.25
     iou_threshold: 0.45
     infer_every_n: 2
