@@ -20,7 +20,8 @@ people_detector:
     #model_path: "/ws/src/mecanumbot_camera/models/yolov8n.onnx"  # <— inside the container
     #model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/yolov8n.onnx"
     #model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/yolov4-tiny.onnx"
-    model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/ssd_mobilenet_v1_10.onnx"
+    #model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/ssd_mobilenet_v1_10.onnx"
+    model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/ssd_mobilenet_v1.tflite"
     input_size: [416, 416]
     conf_threshold: 0.25
     iou_threshold: 0.45

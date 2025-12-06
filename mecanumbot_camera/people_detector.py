@@ -1,161 +1,122 @@
 #!/usr/bin/env python3
 import os
-import rclpy, numpy as np, cv2
+import time
+import numpy as np
+import cv2
+import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+
 from sensor_msgs.msg import Image, CameraInfo
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 from cv_bridge import CvBridge
-import traceback, sys, time
 
-try:
-    import onnxruntime as ort
-except Exception as e:
-    print("onnxruntime import error", e)
-    ort = None
-
-try:
-    from deep_sort_realtime.deepsort_tracker import DeepSort
-except Exception:
-    DeepSort = None
+from tflite_runtime.interpreter import Interpreter
 
 
-# ============================================================
-#   SSD-Mobilenet postprocess
-# ============================================================
+PERSON_CLASS_ID = 1  # COCO person
 
-def ssd_postprocess(boxes, classes, scores, num_det, conf_thr, img_w, img_h):
-    """
-    boxes: [num_det, 4] normalized (ymin, xmin, ymax, xmax)
-    classes: [num_det]
-    scores: [num_det]
-    num_det: float -> convert to int
+def nms(boxes, scores, iou_threshold=0.5):
+    indices = []
+    if len(boxes) == 0:
+        return []
 
-    Return: list of (x,y,w,h,score)
-    """
-    results = []
-    count = int(num_det)
+    boxes = np.array(boxes)
+    scores = np.array(scores)
 
-    for i in range(count):
-        cls = int(classes[i])
-        score = float(scores[i])
-        if score < conf_thr:
-            continue
-        if cls != 1:  # COCO: person=1
-            continue
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
 
-        ymin, xmin, ymax, xmax = boxes[i]
+    areas = (x2 - x1) * (y2 - y1)
+    order = scores.argsort()[::-1]  # sort by score desc
 
-        x = xmin * img_w
-        y = ymin * img_h
-        w = (xmax - xmin) * img_w
-        h = (ymax - ymin) * img_h
+    while order.size > 0:
+        i = order[0]
+        indices.append(i)
 
-        results.append((x, y, w, h, score))
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
 
-    return results
+        w = np.maximum(0.0, xx2 - xx1)
+        h = np.maximum(0.0, yy2 - yy1)
+        inter = w * h
+        union = areas[i] + areas[order[1:]] - inter
+
+        iou = inter / union
+        keep = np.where(iou < iou_threshold)[0]
+
+        order = order[keep + 1]
+
+    return indices
 
 
-# ============================================================
-# PeopleDetector Node
-# ============================================================
-
-class PeopleDetector(Node):
+class PeopleDetectorTFLite(Node):
     def __init__(self):
-        super().__init__("people_detector")
+        super().__init__("people_detector_tflite")
 
         self.bridge = CvBridge()
-        self.session = None
 
-        # ---------------- Parameters ----------------
-        self.declare_parameters("", [
-            ("image_topic", "/camera/image_raw"),
-            ("camera_info_topic", "/camera/camera_info"),
-            ("det_topic", "/detections/person"),
-            ("model_path", ""),
-            ("conf_threshold", 0.4),
-            ("infer_every_n", 1),
+        # Declare parameters
+        self.declare_parameter("image_topic", "/camera/image_raw")
+        self.declare_parameter("camera_info_topic", "/camera/camera_info")
+        self.declare_parameter("det_topic", "/detections/person")
+        self.declare_parameter("model_path", "ssd_mobilenet_v1.tflite")
+        #self.declare_parameter("conf_threshold", 0.4)
+        self.declare_parameter("conf_threshold", 0.6)
+        self.declare_parameter("infer_every_n", 1)
 
-            # tracking
-            ("use_tracker", True),
-            ("tracker_max_age", 25),
-            ("tracker_n_init", 3),
-            ("tracker_max_cosine_distance", 0.2),
-            ("tracker_nn_budget", 100),
-        ])
+        self.image_topic = self.get_parameter("image_topic").value
+        info_topic = self.get_parameter("camera_info_topic").value
+        self.det_topic = self.get_parameter("det_topic").value
+        self.model_path = self.get_parameter("model_path").value
+        self.conf_thr = float(self.get_parameter("conf_threshold").value)
+        self.infer_every_n = int(self.get_parameter("infer_every_n").value)
 
-        (
-            self.image_topic,
-            info_topic,
-            self.det_topic,
-            self.model_path,
-            self.conf_thr,
-            self.infer_every_n,
-            self.use_tracker,
-            self.trk_max_age,
-            self.trk_n_init,
-            self.trk_cos_thr,
-            self.trk_nn_budget,
-        ) = [p.value for p in self.get_parameters([
-            "image_topic", "camera_info_topic", "det_topic",
-            "model_path", "conf_threshold", "infer_every_n",
-            "use_tracker", "tracker_max_age", "tracker_n_init",
-            "tracker_max_cosine_distance", "tracker_nn_budget"
-        ])]
+        # Debug topic
+        self.pub_dbg = self.create_publisher(Image, "/camera/people_debug", 10)
 
-        # debug output
-        self.debug_topic = "/camera/people_debug"
-        self.pub_dbg = self.create_publisher(Image, self.debug_topic, 10)
-
-        # publishers
+        # Detection output
         self.pub_det = self.create_publisher(Detection2DArray, self.det_topic, 10)
 
-        # subscribers
+        # Subscriptions
         self.create_subscription(CameraInfo, info_topic, self.on_info, 10)
         self.create_subscription(Image, self.image_topic, self.on_image, qos_profile_sensor_data)
 
         self.last_info = None
-        self.camera_frame_id = "camera"
         self.frame_idx = 0
 
-        # ---------------- Load Model ----------------
-        if self.model_path and os.path.exists(self.model_path):
-            so = ort.SessionOptions()
-            so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-            try:
-                self.session = ort.InferenceSession(
-                    self.model_path, sess_options=so,
-                    providers=["CPUExecutionProvider"]
-                )
-                self.input_name = self.session.get_inputs()[0].name
-                self.get_logger().info(f"Loaded SSD model: {self.model_path}")
-            except Exception as e:
-                self.get_logger().error(f"ONNX load failed: {e}")
-        else:
-            self.get_logger().error(f"Model path invalid: {self.model_path}")
+        # ---------------- Load TFLite model ----------------
+        if not os.path.exists(self.model_path):
+            self.get_logger().error(f"TFLite model not found: {self.model_path}")
+            return
 
-        # ---------------- Tracker ----------------
-        self.tracker = None
-        if self.use_tracker:
-            if DeepSort is None:
-                self.get_logger().warn("DeepSORT not installed.")
-            else:
-                self.tracker = DeepSort(
-                    max_age=int(self.trk_max_age),
-                    n_init=int(self.trk_n_init),
-                    max_cosine_distance=float(self.trk_cos_thr),
-                    nn_budget=int(self.trk_nn_budget),
-                    embedder="mobilenet",
-                    half=True,
-                    bgr=True,
-                )
-                self.get_logger().info("DeepSORT tracker initialized.")
+        self.interpreter = Interpreter(model_path=self.model_path)
+        self.interpreter.allocate_tensors()
+
+        input_details = self.interpreter.get_input_details()
+        output_details = self.interpreter.get_output_details()
+
+        # SSD Mobilenet V1 TFLite input/output spec
+        self.input_index = input_details[0]["index"]
+        self.input_height = input_details[0]["shape"][1]
+        self.input_width = input_details[0]["shape"][2]
+
+        self.output_boxes = output_details[0]["index"]
+        self.output_classes = output_details[1]["index"]
+        self.output_scores = output_details[2]["index"]
+        self.output_num = output_details[3]["index"]
+
+        self.get_logger().info(f"Loaded TFLite SSD model: {self.model_path}")
+        input_details = self.interpreter.get_input_details()
+        self.get_logger().info(f"INPUT: {input_details}")
 
     # ---------------------------------------------------------
     def on_info(self, msg: CameraInfo):
         self.last_info = msg
-        if msg.header.frame_id:
-            self.camera_frame_id = msg.header.frame_id
 
     # ---------------------------------------------------------
     def on_image(self, img_msg: Image):
@@ -164,114 +125,112 @@ class PeopleDetector(Node):
         dets_msg = Detection2DArray()
         dets_msg.header = img_msg.header
 
-        if self.session is None or self.frame_idx % int(self.infer_every_n) != 0:
+        if self.frame_idx % self.infer_every_n != 0:
             self.pub_det.publish(dets_msg)
             return
 
         try:
             img = self.bridge.imgmsg_to_cv2(img_msg, "bgr8")
-        except Exception as e:
-            self.get_logger().warn(f"cv_bridge failed: {e}")
+        except:
             self.pub_det.publish(dets_msg)
             return
 
         h, w = img.shape[:2]
 
-        # ---------------- Preprocess for SSD ----------------
-        inp = cv2.resize(img, (300, 300))
-        inp = inp[:, :, ::-1]  # BGR → RGB
-        inp = inp.astype(np.uint8)
-        inp = inp[None, ...]  # (1,300,300,3)
+        # -------- Preprocess --------
+        resized = cv2.resize(img, (self.input_width, self.input_height))
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        inp = np.expand_dims(rgb, axis=0).astype(np.uint8)
 
-        # ---------------- Inference ----------------
-        try:
-            t0 = time.time()
-            outputs = self.session.run(None, {self.input_name: inp})
-            t1 = time.time()
-            #self.get_logger().info(f"SSD inference: {(t1 - t0)*1000:.1f} ms")
-        except Exception as e:
-            self.get_logger().error(f"SSD inference failed: {e}")
-            self.pub_det.publish(dets_msg)
-            return
+        # -------- Inference --------
+        t0 = time.time()
+        self.interpreter.set_tensor(self.input_index, inp)
+        self.interpreter.invoke()
+        t1 = time.time()
 
-        boxes = outputs[0][0]        # [num_det, 4]
-        classes = outputs[1][0]      # [num_det]
-        scores = outputs[2][0]       # [num_det]
-        num_det = outputs[3][0]      # float
+        #self.get_logger().info(f"TFLite inference: {(t1-t0)*1000:.1f} ms")
 
-        detections = ssd_postprocess(
-            boxes, classes, scores, num_det,
-            conf_thr=self.conf_thr,
-            img_w=w, img_h=h
-        )
+        #boxes = self.interpreter.get_tensor(self.output_boxes)[0]
+        #classes = self.interpreter.get_tensor(self.output_classes)[0]
+        #scores = self.interpreter.get_tensor(self.output_scores)[0]
+        #num = int(self.interpreter.get_tensor(self.output_num)[0])
+        boxes   = self.interpreter.get_tensor(167)[0]   # (10,4)
+        classes = self.interpreter.get_tensor(168)[0]   # (10,)
+        scores  = self.interpreter.get_tensor(169)[0]   # (10,)
+        num     = int(self.interpreter.get_tensor(170)[0])
 
-        # ---------------- Tracking ----------------
-        tracks = []
-        if self.tracker and detections:
-            ds = []
+
+        # -------- Postprocess --------
+        detections = []
+        for i in range(num):
+            cls = int(classes[i])
+            score = float(scores[i])
+            #if score < self.conf_thr or cls != PERSON_CLASS_ID:
+            #    continue
+            #if cls != 1:   # person class
+            #    continue
+            if score < self.conf_thr:
+                continue
+
+            # Try both class IDs commonly used
+            if cls not in (0, 1):
+                continue
+
+            ymin, xmin, ymax, xmax = boxes[i]
+
+            x = xmin * w
+            y = ymin * h
+            bw = (xmax - xmin) * w
+            bh = (ymax - ymin) * h
+
+            detections.append((x, y, bw, bh, score))
+
+        # -------- Publish detections --------
+        for (x, y, bw, bh, sc) in detections:
+            d = Detection2D()
+            d.header = img_msg.header
+            d.bbox.center.position.x = x + bw / 2
+            d.bbox.center.position.y = y + bh / 2
+            d.bbox.size_x = bw
+            d.bbox.size_y = bh
+            hyp = ObjectHypothesisWithPose()
+            hyp.hypothesis.class_id = "person"
+            hyp.hypothesis.score = sc
+            d.results.append(hyp)
+            dets_msg.detections.append(d)
+
+        if detections:
+            boxes_xyxy = []
+            scores_list = []
+
             for (x, y, bw, bh, sc) in detections:
-                ds.append(([x, y, x + bw, y + bh], sc, 0))
-            tracks = self.tracker.update_tracks(ds, frame=img)
+                boxes_xyxy.append([x, y, x + bw, y + bh])
+                scores_list.append(sc)
 
-        # ---------------- Build ROS Message ----------------
-        if tracks:
-            for tr in tracks:
-                if not tr.is_confirmed():
-                    continue
-                x1, y1, x2, y2 = tr.to_ltrb()
-                wbox = x2 - x1
-                hbox = y2 - y1
-                cx, cy = x1 + wbox/2, y1 + hbox/2
+            keep = nms(boxes_xyxy, scores_list, iou_threshold=0.5)
 
-                d = Detection2D()
-                d.header = img_msg.header
-                d.bbox.center.position.x = cx
-                d.bbox.center.position.y = cy
-                d.bbox.size_x = wbox
-                d.bbox.size_y = hbox
+            detections = [detections[i] for i in keep]
 
-                hyp = ObjectHypothesisWithPose()
-                hyp.hypothesis.class_id = f"person:{tr.track_id}"
-                hyp.hypothesis.score = tr.det_conf or 1.0
-                d.results.append(hyp)
-                dets_msg.detections.append(d)
-        else:
-            for (x, y, bw, bh, sc) in detections:
-                cx, cy = x + bw/2, y + bh/2
-                d = Detection2D()
-                d.header = img_msg.header
-                d.bbox.center.position.x = cx
-                d.bbox.center.position.y = cy
-                d.bbox.size_x = bw
-                d.bbox.size_y = bh
-                hyp = ObjectHypothesisWithPose()
-                hyp.hypothesis.class_id = "person"
-                hyp.hypothesis.score = sc
-                d.results.append(hyp)
-                dets_msg.detections.append(d)
-
-        # ---------------- Debug Overlay ----------------
+        # -------- Debug overlay --------
         dbg = img.copy()
-        for d in dets_msg.detections:
-            x = int(d.bbox.center.position.x - 0.5 * d.bbox.size_x)
-            y = int(d.bbox.center.position.y - 0.5 * d.bbox.size_y)
-            wbox = int(d.bbox.size_x)
-            hbox = int(d.bbox.size_y)
-            cv2.rectangle(dbg, (x, y), (x+wbox, y+hbox), (0,255,0), 2)
-            if d.results:
-                cv2.putText(dbg, d.results[0].hypothesis.class_id,
-                            (x, max(0, y-5)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                            (0,255,0), 1)
-
-        dbg_msg = self.bridge.cv2_to_imgmsg(dbg, "bgr8")
-        dbg_msg.header = img_msg.header
-        self.pub_dbg.publish(dbg_msg)
+        for (x, y, bw, bh, sc) in detections:
+            x1 = int(x)
+            y1 = int(y)
+            x2 = int(x + bw)
+            y2 = int(y + bh)
+            cv2.rectangle(dbg, (x1, y1), (x2, y2), (0,255,0), 2)
 
         self.pub_det.publish(dets_msg)
+        self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))
 
 
 def main():
     rclpy.init()
-    rclpy.spin(PeopleDetector())
+    node = PeopleDetectorTFLite()
+    rclpy.spin(node)
+    node.destroy_node()
     rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
