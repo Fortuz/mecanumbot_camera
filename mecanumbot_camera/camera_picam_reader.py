@@ -6,10 +6,10 @@ class PiCamReader:
         self.picam2 = Picamera2()
 
         config = self.picam2.create_video_configuration(
-            main={"size": (width, height), "format": "BGR888"},
+            main={"size": (width, height), "format": "RGB888"},
             controls={
-                "FrameDurationLimits": (1000000//fps, 1000000//fps),
                 "AwbEnable": True,
+                "AwbMode": 2,
             }
         )
 
@@ -18,10 +18,9 @@ class PiCamReader:
 
     def read(self):
         try:
-            # BGR888 → OpenCV-nek tökéletes, nem kell átkonvertálni
-            return self.picam2.capture_array("main")
-        except Exception as e:
-            print("READ ERROR:", e)
+            frame = self.picam2.capture_array()
+            return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        except:
             return None
 
     def stop(self):
