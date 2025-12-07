@@ -266,17 +266,25 @@ Foxglove Studio is another convenient option for remote visualization.
 
 ---
 
-## 9. Docker Support (outdated)
+## 9. Docker Support
 
-Existing Dockerfiles reference an older architecture (v4l2 camera, ONNX detectors, no behavior manager, no TFLite downloads). To modernize:
+A refreshed Dockerfile (`osrf/ros:humble-ros-base`) builds the package with NumPy 1.26, OpenCV 4.9, and `tflite-runtime`. The compose file is tailored for Windows hosts (Linux containers) with RViz forwarding over X11.
 
-1. Base on `ros:<ros2_distro>-ros-base` (ARM64).
-2. Install Python deps with `numpy<2.0` plus `tflite-runtime`.
-3. Build the package via `colcon`.
-4. Expose the Pi camera or `/dev/video*`.
-5. Use `camera_and_detectors.launch.py` as the entrypoint.
+**Usage**
 
-Until then, native execution on Pi OS or Ubuntu 22.04 is recommended.
+1. Start an X server on Windows (VcXsrv/x410) and set `DISPLAY=host.docker.internal:0.0`.
+2. Build the image: `docker compose build`.
+3. Launch the dev container: `docker compose up -d`.
+4. Open a shell inside: `docker compose exec mecanumbot_camera bash`.
+5. Inside the container:
+   ```bash
+   source /opt/ros/humble/setup.bash
+   colcon build --event-handlers console_direct+
+   source install/setup.bash
+   ros2 launch mecanumbot_camera camera_and_detectors.launch.py
+   ```
+
+The compose file bind-mounts your workspace to `/ws/src/mecanumbot_camera` and keeps `build/`, `install/`, and `log/` in Docker named volumes so rebuilds survive container restarts.
 
 ---
 
