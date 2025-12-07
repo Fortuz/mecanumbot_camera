@@ -132,27 +132,23 @@ flowchart LR
 - `/overlay_fused`
 - `/behavior_manager`
 
+### DETECTION PIPELINE DIAGRAM
 ```mermaid
 flowchart TB
 
-    subgraph Camera
-        A[Camera Node\n/camera/image_raw]
-    end
+    A[Camera Node - /camera/image_raw]
 
-    subgraph BallDetector
-        B1[Color/shape filtering]
-        B2[Contour / blob detection]
-        B3[2D bounding box\n-> /detections/ball]
-    end
+    B1[Ball Detector - color/shape]
+    B2[Blob detection]
+    B3[Output: /detections/ball]
 
-    subgraph PersonDetector
-        C1[Resize + normalize]
-        C2[TFLite inference\n(person detection)]
-        C3[Post-processing\n-> /detections/person]
-    end
+    C1[Person Detector - preprocess]
+    C2[TFLite inference]
+    C3[Output: /detections/person]
 
     A --> B1 --> B2 --> B3
     A --> C1 --> C2 --> C3
+
 ```
 
 ### Topic Flow Diagram (Data Pipeline)
