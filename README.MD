@@ -182,6 +182,35 @@ Finite state machine that controls robot locomotion and gripper behavior.
   `person_lost_timeout=1.0`, `new_ball_absent_time=2.0`, `Kp_rot=0.0025`, `Kp_fwd=0.015`,
   `max_ang=0.8`, `max_lin=0.30`.
 
+### ⚙️ Behavior Manager – State Machine
+
+```mermaid
+stateDiagram-v2
+    direction TB
+
+    [*] --> SEARCH
+
+    state SEARCH {
+        direction TB
+        [*] --> ROTATE
+        ROTATE --> ROTATE: waiting_for_new_ball && !ball_not_seen_long_enough
+        ROTATE --> TRACK_BALL: ball_seen && stable_ball && !waiting_for_new_ball
+        TRACK_BALL --> ROTATE: !ball_seen
+        TRACK_BALL --> FETCH: stable_ball && ball_width_px >= fetch_enter_px
+    }
+
+    FETCH --> SEARCH: !ball_seen
+    FETCH --> GRASP: stable_ball && ball_width_px >= fetch_stop_px
+
+    GRASP --> FIND_OWNER: grasp_duration_elapsed
+
+    FIND_OWNER --> FIND_OWNER: !person_seen
+    FIND_OWNER --> FIND_OWNER: person_seen && (!stable_person || !person_close_enough)
+    FIND_OWNER --> DELIVER: person_seen && stable_person && person_close_enough && time_min_reached
+
+    DELIVER --> SEARCH: delivery_wait_done
+```
+
 ---
 
 ## 5. Configuration (`config/params.yaml`)
@@ -307,33 +336,4 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-```
-
-## ⚙️ Behavior Manager – State Machine
-
-```mermaid
-stateDiagram-v2
-    direction TB
-
-    [*] --> SEARCH
-
-    state SEARCH {
-        direction TB
-        [*] --> ROTATE
-        ROTATE --> ROTATE: waiting_for_new_ball && !ball_not_seen_long_enough
-        ROTATE --> TRACK_BALL: ball_seen && stable_ball && !waiting_for_new_ball
-        TRACK_BALL --> ROTATE: !ball_seen
-        TRACK_BALL --> FETCH: stable_ball && ball_width_px >= fetch_enter_px
-    }
-
-    FETCH --> SEARCH: !ball_seen
-    FETCH --> GRASP: stable_ball && ball_width_px >= fetch_stop_px
-
-    GRASP --> FIND_OWNER: grasp_duration_elapsed
-
-    FIND_OWNER --> FIND_OWNER: !person_seen
-    FIND_OWNER --> FIND_OWNER: person_seen && (!stable_person || !person_close_enough)
-    FIND_OWNER --> DELIVER: person_seen && stable_person && person_close_enough && time_min_reached
-
-    DELIVER --> SEARCH: delivery_wait_done
 ```
