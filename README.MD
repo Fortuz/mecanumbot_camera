@@ -417,6 +417,25 @@ A refreshed Dockerfile (`osrf/ros:humble-ros-base`) builds the package with NumP
 
 The compose file bind-mounts your workspace to `/ws/src/mecanumbot_camera` and keeps `build/`, `install/`, and `log/` in Docker named volumes so rebuilds survive container restarts.
 
+## Behavior Parameters
+
+| Parameter | Meaning | Role |
+|----------|---------|------|
+| `fetch_enter_px` | Ball bbox width threshold to enter FETCH | Determines when the robot begins slow approach |
+| `fetch_stop_px` | Ball bbox width to switch to GRASP | Marks when robot is close enough to grasp |
+| `REQUIRED_BALL_STABLE` | Number of stable frames required | Prevents flickering detections |
+| `REQUIRED_PERSON_STABLE` | Stable person frames before delivery | Ensures the robot approaches a real target |
+| `ball_lost_timeout` | Seconds without detection → ball lost | Used for fallback to SEARCH |
+| `person_lost_timeout` | Seconds without detection → rotate again | Prevents random drifting |
+| `min_find_owner_time` | Minimum time spent searching owner | Avoids accidental quick transitions |
+| `Kp_rot` | Rotation control gain | Affects turning speed |
+| `Kp_fwd` | Forward speed gain | Affects how aggressively the robot approaches |
+| `max_ang` | Max angular velocity | Safety limit |
+| `max_lin` | Max linear velocity | Safety limit |
+| `search_speed` | Angular speed during SEARCH | Controls scanning |
+| `owner_threshold_px` | Person bbox width required for delivery | Defines distance threshold |
+
+
 ---
 
 ## 10. License
