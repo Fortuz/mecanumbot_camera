@@ -100,6 +100,19 @@ mecanumbot_camera/
 
 ## 3. Node Architecture
 
+### ROS2 Node Architecture Diagram (Node Graph)
+```mermaid
+flowchart LR
+    cam[Camera Node\n/camera/image_raw] --> det_ball[/detections/ball]
+    cam --> det_person[/detections/person]
+
+    det_ball --> behavior[BehaviorManager]
+    det_person --> behavior
+
+    behavior --> cmd[/cmd_vel]
+    behavior --> grip[/gripper_controller/commands]
+```
+
 ### Active nodes (from `camera_and_detectors.launch.py`)
 
 - `/video_publisher`
@@ -107,6 +120,17 @@ mecanumbot_camera/
 - `/people_detector`
 - `/overlay_fused`
 - `/behavior_manager`
+
+###Topic Flow Diagram (Data Pipeline)
+```mermaid
+flowchart LR
+   A(Camera frames) --> B(Ball detector)
+   A --> C(Person detector)
+   B --> D(Behavior Manager)
+   C --> D
+   D --> E(cmd_vel)
+   D --> F(gripper command)
+```
 
 ### Topic graph
 
