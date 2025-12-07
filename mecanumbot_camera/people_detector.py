@@ -51,7 +51,7 @@ class PeopleDetectorTFLite(Node):
         self.prev_person_box = None      # (x1, y1, x2, y2)
         self.smooth_alpha = 0.85         # 0.8–0.9: stabil, de nem túl laggos
         self.hold_frames = 0
-        self.hold_max = 4                # ennyi inferencia-frame-ig tartjuk a régi boxot
+        self.hold_max = 12                # 8-12
 
         # ---------------- Load TFLite model ----------------
         try:
@@ -156,6 +156,28 @@ class PeopleDetectorTFLite(Node):
                 x1, y1, x2, y2 = self.prev_person_box
                 sc = 0.0  # nincs friss score, de a bbox marad
                 self.hold_frames += 1
+
+                det = Detection2D()
+                det.header = msg.header
+                det.bbox.center.position.x = float((x1 + x2) / 2.0)
+                det.bbox.center.position.y = float((y1 + y2) / 2.0)
+                det.bbox.size_x = float(x2 - x1)
+                det.bbox.size_y = float(y2 - y1)
+
+                hyp = ObjectHypothesisWithPose()
+                hyp.hypothesis.class_id = "person"
+                hyp.hypothesis.score = float(sc)
+                det.results.append(hyp)
+
+                dets_msg.detections.append(det)
+
+                dbg = img.copy()
+                cv2.rectangle(dbg, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 2)
+
+                self.pub_det.publish(dets_msg)
+                self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))
+                return
+            
             else:
                 # Már túl régi, töröljük a boxot, üres frame-et küldünk
                 self.prev_person_box = None
