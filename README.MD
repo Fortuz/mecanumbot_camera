@@ -105,8 +105,10 @@ mecanumbot_camera/
 flowchart LR
 
     cam[Camera Node - /camera/image_raw]
-    detBall[Ball Detector - ONNX]
-    detPerson[Person Detector - ONNX]
+
+    detBall[Ball Detector - classical CV]
+    detPerson[Person Detector - TFLite]
+
     behavior[BehaviorManager]
     cmd[Base Controller]
     grip[Gripper Controller]
