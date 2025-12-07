@@ -147,6 +147,8 @@ Standard ROS infrastructure topics (`/tf`, `/tf_static`, `/rosout`, `/parameter_
 
 Streams 640x480@30 FPS frames from the Raspberry Pi CSI camera through `PiCamReader`, applies a hue shift for color correction, and publishes `/camera/image_raw`. Camera info is not published by default; add another publisher if your stack requires it.
 
+> **Tip:** If you already have a camera driver elsewhere in your robot stack (e.g., the mecanumbot base publishes `/camera/image_raw`), you can omit this node entirely and remap `ball_tracker_rgb`, `people_detector`, and `overlay_fused` to subscribe to that existing topic. The rest of the system does not depend on this specific publisher.
+
 ### 4.2 `ball_tracker_rgb`
 
 HSV-based color segmentation to detect the tracked ball.
