@@ -104,9 +104,9 @@ mecanumbot_camera/
 ```mermaid
 flowchart LR
 
-    cam[Camera Node (/camera/image_raw)]
-    detBall[Ball Detector (ONNX)]
-    detPerson[Person Detector (ONNX)]
+    cam[Camera Node - /camera/image_raw]
+    detBall[Ball Detector - ONNX]
+    detPerson[Person Detector - ONNX]
     behavior[BehaviorManager]
     cmd[Base Controller]
     grip[Gripper Controller]
@@ -119,6 +119,7 @@ flowchart LR
 
     behavior -->|/cmd_vel| cmd
     behavior -->|/gripper_controller/commands| grip
+
 ```
 
 ### Active nodes (from `camera_and_detectors.launch.py`)
