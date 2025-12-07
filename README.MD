@@ -103,14 +103,18 @@ mecanumbot_camera/
 ### ROS2 Node Architecture Diagram (Node Graph)
 ```mermaid
 flowchart LR
-    cam[Camera Node\n/camera/image_raw] --> det_ball[/detections/ball]
-    cam --> det_person[/detections/person]
+    %% Camera
+    cam[Camera Node\n/camera/image_raw]
 
-    det_ball --> behavior[BehaviorManager]
-    det_person --> behavior
+    %% Detectors
+    cam --> detBall[Ball Detector\n(ONNX)]
+    cam --> detPerson[Person Detector\n(ONNX)]
 
-    behavior --> cmd[/cmd_vel]
-    behavior --> grip[/gripper_controller/commands]
+    detBall -->|/detections/ball| behavior[BehaviorManager]
+    detPerson -->|/detections/person| behavior
+
+    behavior -->|/cmd_vel| cmd[Base Controller]
+    behavior -->|/gripper_controller/commands| grip[Gripper Controller]
 ```
 
 ### Active nodes (from `camera_and_detectors.launch.py`)
