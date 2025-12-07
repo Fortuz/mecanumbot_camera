@@ -132,7 +132,7 @@ flowchart LR
 - `/overlay_fused`
 - `/behavior_manager`
 
-###Topic Flow Diagram (Data Pipeline)
+### Topic Flow Diagram (Data Pipeline)
 ```mermaid
 flowchart LR
    A(Camera frames) --> B(Ball detector)
