@@ -226,7 +226,7 @@ Runs a TensorFlow Lite SSD model. If the model is missing, it is downloaded and 
 
 ### 4.4 `overlay_fused`
 
-Fuses `/camera/image_raw`, `/detections/ball`, and `/detections/person` into `/camera/fused_debug` for visualization. The node’s internal default subscribes to `/camera/people_debug`; the provided `params.yaml` switches it to `/camera/image_raw`.
+Fuses `/camera/image_raw`, `/detections/ball`, and `/detections/person` into `/camera/fused_debug` for visualization. The node's internal default subscribes to `/camera/people_debug`; the provided `params.yaml` switches it to `/camera/image_raw`.
 
 ### 4.5 `behavior_manager`
 
@@ -240,10 +240,27 @@ Finite state machine that controls robot locomotion and gripper behavior.
   `person_lost_timeout=1.0`, `new_ball_absent_time=2.0`, `Kp_rot=0.0025`, `Kp_fwd=0.015`,
   `max_ang=0.8`, `max_lin=0.30`.
 
-### ⚙️ Behavior Manager – State Machine
+**Behavior parameter reference**
 
-The robot’s behavior is controlled by a six-state finite state machine (FSM):
-SEARCH → TRACK_BALL → FETCH → GRASP → FIND_OWNER → DELIVER
+| Parameter | Purpose | Notes |
+|-----------|---------|-------|
+| `fetch_enter_px` | Ball bbox width threshold to leave TRACK and enter FETCH | Larger values make the robot start the approach earlier. |
+| `fetch_stop_px` | Ball bbox width to switch from FETCH to GRASP | Ensures the robot is close enough before stopping. |
+| `REQUIRED_BALL_STABLE` | Number of consecutive frames required to consider the ball "stable" | Prevents flicker-driven transitions. |
+| `REQUIRED_PERSON_STABLE` | Stable person frames before entering DELIVER | Avoids false positives. |
+| `ball_lost_timeout` | Seconds without detections before considering the ball lost | Triggers a fallback to SEARCH. |
+| `person_lost_timeout` | Seconds without detections before rotating again | Keeps FIND_OWNER responsive. |
+| `min_find_owner_time` | Minimum dwell time in FIND_OWNER | Stops immediate transitions to DELIVER. |
+| `new_ball_absent_time` | Time the ball must vanish after delivery before SEARCH restarts | Prevents cycling on the same ball. |
+| `Kp_rot` / `Kp_fwd` | Proportional gains for angular/linear control | Adjust heading correction and forward speed. |
+| `max_ang` / `max_lin` | Saturation limits for motion commands | Protects the drivetrain. |
+| `search_speed` | Angular velocity while scanning | Controls how fast the robot spins in SEARCH. |
+| `owner_threshold_px` | Person bbox width required for delivery | Sets the standoff distance to the owner. |
+
+### Behavior Manager State Machine
+
+The robot's behavior is controlled by a six-state FSM:
+`SEARCH -> TRACK_BALL -> FETCH -> GRASP -> FIND_OWNER -> DELIVER`
 
 The states and transitions can be followed below:
 
@@ -425,8 +442,8 @@ The compose file bind-mounts your workspace to `/ws/src/mecanumbot_camera` and k
 | `fetch_stop_px` | Ball bbox width to switch to GRASP | Marks when robot is close enough to grasp |
 | `REQUIRED_BALL_STABLE` | Number of stable frames required | Prevents flickering detections |
 | `REQUIRED_PERSON_STABLE` | Stable person frames before delivery | Ensures the robot approaches a real target |
-| `ball_lost_timeout` | Seconds without detection → ball lost | Used for fallback to SEARCH |
-| `person_lost_timeout` | Seconds without detection → rotate again | Prevents random drifting |
+| `ball_lost_timeout` | Seconds without detection -> ball lost | Used for fallback to SEARCH |
+| `person_lost_timeout` | Seconds without detection -> rotate again | Prevents random drifting |
 | `min_find_owner_time` | Minimum time spent searching owner | Avoids accidental quick transitions |
 | `Kp_rot` | Rotation control gain | Affects turning speed |
 | `Kp_fwd` | Forward speed gain | Affects how aggressively the robot approaches |
