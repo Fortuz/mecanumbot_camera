@@ -292,7 +292,7 @@ The compose file bind-mounts your workspace to `/ws/src/mecanumbot_camera` and k
 ## 10. License
 
 ```
-Copyright 2024 mecanumbot_camera contributors
+Copyright 2025 mecanumbot_camera contributors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
