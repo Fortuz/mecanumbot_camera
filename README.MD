@@ -9,6 +9,7 @@ ROS 2 camera, detection, and behavior-control stack for a mecanum-drive robot th
 - TensorFlow Lite SSD person detection (`people_detector`) publishing `/detections/person`
 - `overlay_fused` draws both detections over the camera feed on `/camera/fused_debug`
 - `behavior_manager` runs the complete fetch/deliver FSM (search -> track -> fetch -> grasp -> find owner -> deliver -> wait)
+- Designed for live visualization in RViz/Foxglove using the debug topics, especially `/camera/fused_debug`.
 - One command launches the full stack:
 
 ```bash
@@ -111,7 +112,6 @@ mecanumbot_camera/
 ```text
 video_publisher
   -> /camera/image_raw        (sensor_msgs/Image)
-  -> /camera/camera_info      (sensor_msgs/CameraInfo)
 
 ball_tracker_rgb
   -> /camera/image_mask       (sensor_msgs/Image)  HSV mask
@@ -144,7 +144,7 @@ Standard ROS infrastructure topics (`/tf`, `/tf_static`, `/rosout`, `/parameter_
 
 ### 4.1 `video_publisher`
 
-Streams 640x480@30 FPS frames from the Raspberry Pi CSI camera through `PiCamReader`, converts them with `cv_bridge`, and publishes `/camera/image_raw` (plus camera info if configured).
+Streams 640x480@30 FPS frames from the Raspberry Pi CSI camera through `PiCamReader`, applies a hue shift for color correction, and publishes `/camera/image_raw`. Camera info is not published by default; add another publisher if your stack requires it.
 
 ### 4.2 `ball_tracker_rgb`
 
@@ -165,7 +165,7 @@ Runs a TensorFlow Lite SSD model. If the model is missing, it is downloaded and 
 
 ### 4.4 `overlay_fused`
 
-Fuses `/camera/image_raw`, `/detections/ball`, and `/detections/person` into `/camera/fused_debug` for visualization.
+Fuses `/camera/image_raw`, `/detections/ball`, and `/detections/person` into `/camera/fused_debug` for visualization. The node’s internal default subscribes to `/camera/people_debug`; the provided `params.yaml` switches it to `/camera/image_raw`.
 
 ### 4.5 `behavior_manager`
 
@@ -184,14 +184,13 @@ Finite state machine that controls robot locomotion and gripper behavior.
 ## 5. Configuration (`config/params.yaml`)
 
 `camera_and_detectors.launch.py` loads `config/params.yaml` using `PathJoinSubstitution`.
-The YAML file groups parameters per node:
+Currently the YAML file provides:
 
-- `ball_tracker_rgb`: HSV thresholds, morphological kernel sizes/iterations, minimum contour properties, topic names.
-- `people_detector`: camera topic, detection topic, confidence threshold, `infer_every_n`.
-- `overlay_fused`: ball/person input topics plus the fused debug output topic.
-- `behavior_manager`: geometric thresholds, PID gains, timeouts, and FSM tuning constants.
+- `ball_tracker_rgb`: HSV lower/upper bounds, minimum area, and topic names.
+- `people_detector`: image topic, debug topic, detection topic, TFLite path, and inference settings.
+- `overlay_fused`: input topics and fused output topic.
 
-Edit the YAML to adjust for lighting conditions, camera resolution, or robot-specific dynamics.
+Additional `ball_tracker_rgb` knobs (median blur, morphology, circularity, etc.) are declared in the node itself and can be changed via `ros2 param set` or by editing the defaults in `ball_tracker_rgb.py`. `behavior_manager` parameters are hard-coded inside `behavior_manager.py`; exposing them via YAML would require code changes.
 
 ---
 
@@ -248,13 +247,13 @@ ros2 topic list
 ## 7. Debugging & Visualization
 
 - Debug topics: `/camera/image_mask`, `/camera/image_debug`, `/camera/people_debug`, `/camera/fused_debug`.
-- View streams with:
+- View streams directly in RViz (add `Image` displays for the topics) or via:
 
 ```bash
 ros2 run rqt_image_view rqt_image_view
 ```
 
-RViz or Foxglove can also visualize the topics.
+Foxglove Studio is another convenient option for remote visualization.
 
 ---
 
@@ -284,4 +283,3 @@ Until then, native execution on Pi OS or Ubuntu 22.04 is recommended.
 ## 10. License
 
 Insert your preferred project license (e.g., MIT, Apache-2.0, proprietary).
-
