@@ -132,9 +132,32 @@ flowchart LR
 - `/overlay_fused`
 - `/behavior_manager`
 
+```mermaid
+flowchart TB
+
+    subgraph Camera
+        A[Camera Node\n/camera/image_raw]
+    end
+
+    subgraph BallDetector
+        B1[Color/shape filtering]
+        B2[Contour / blob detection]
+        B3[2D bounding box\n-> /detections/ball]
+    end
+
+    subgraph PersonDetector
+        C1[Resize + normalize]
+        C2[TFLite inference\n(person detection)]
+        C3[Post-processing\n-> /detections/person]
+    end
+
+    A --> B1 --> B2 --> B3
+    A --> C1 --> C2 --> C3
+```
+
 ### Topic Flow Diagram (Data Pipeline)
 
-The previous diagram shows the ROS2 node-level architecture,
+The Node Architecture Diagram shows the ROS2 node-level architecture,
 while the second diagram gives a simplified view of the data flow through the system.
 
 ```mermaid
