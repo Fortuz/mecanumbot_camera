@@ -1,188 +1,206 @@
 # mecanumbot_camera
 
-ROS 2 alapú kamera + detektálás + viselkedés-vezérlés stack egy Mecanum robothoz.  
-A rendszer Raspberry Pi-re van optimalizálva, és a következőket tudja:
+A ROS 2–based camera, detection, and behavior-control stack designed for a Mecanum robot, optimized for Raspberry Pi hardware.
 
-- Raspberry Pi kamera stream (`video_publisher` → `/camera/image_raw`)
-- HSV-alapú labda detektálás (`ball_tracker_rgb` → `/detections/ball`)
-- TFLite SSD alapú személydetektálás (`people_detector` → `/detections/person`)
-- Egyesített debug overlay (`overlay_fused` → `/camera/fused_debug`)
-- Viselkedés-kezelés (`behavior_manager`):  
-  - labda keresés, követés, felvétel  
-  - “gazda” (személy) felkutatása  
-  - labda odaszállítása a személyhez  
-  - új labda várása, új kör indítása
+The system provides:
 
-A teljes stacket a `camera_and_detectors.launch.py` launch fájl indítja.
+- Raspberry Pi camera streaming (`video_publisher` → `/camera/image_raw`)
+- HSV-based ball detection (`ball_tracker_rgb` → `/detections/ball`)
+- TFLite SSD person detection (`people_detector` → `/detections/person`)
+- Fused debug overlay (`overlay_fused` → `/camera/fused_debug`)
+- Full behavior FSM (`behavior_manager`) for:
+  - ball search, tracking, fetching
+  - finding the “owner” (a detected person)
+  - delivering the ball
+  - waiting for a new ball to start the next cycle
 
----
+The entire stack is launched via:
+ros2 launch mecanumbot_camera camera_and_detectors.launch.py
 
-## 1. Hardver és szoftver követelmények
-
-### Cél hardverek
-
-- **Raspberry Pi 5**
-  - Tesztelt: Raspberry Pi OS, ROS 2 saját forrásból fordítva
-- **Raspberry Pi 3**
-  - Cél: Ubuntu 22.04 + gyári ROS 2 disztribúció  
-    (itt a `vision_msgs` és `vision_opencv` csomagok már a disztribúció részei)
-
-### ROS 2
-
-- Bármely teljes értékű ROS 2 disztribúció használható (pl. Humble),  
-  a továbbiakban `<ros2_distro>`-val hivatkozunk rá.
-- Feltétel: legyen telepítve:
-  - `vision_msgs`
-  - `vision_opencv` (cv_bridge, image_transport stb.)
-
-### Python környezet
-
-- **Python:** 3.11 (Pi OS-en tesztelve)
-- **Fontos:** a rendszer **NumPy 1.x**-re van hangolva  
-  - pl. `numpy==1.26.*`
-  - a NumPy 2.x verziók kompatibilitási problémákat okozhatnak (TFLite / OpenCV / ROS2 kombó).
+yaml
+Kód másolása
 
 ---
 
-## 2. Projekt felépítése
+## 1. Hardware & Software Requirements
 
-A ROS 2 package neve: `mecanumbot_camera`.
+### Supported hardware
 
-Főbb elemek:
+#### **Raspberry Pi 5**
+- Tested using Raspberry Pi OS  
+- ROS 2 built from source  
+- Additional packages built from source (`vision_msgs`, `vision_opencv`)
 
-- `mecanumbot_camera/launch/camera_and_detectors.launch.py`  
-  – a *jelenleg használt* launch file
-- `mecanumbot_camera/config/params.yaml`  
-  – paraméterek (HSV, küszöbök, topic nevek, stb.)
-- `mecanumbot_camera/mecanumbot_camera/`  
-  - `video_publisher.py`
-  - `ball_tracker_rgb.py` (vagy `ball_tracker_rgb_optimized.py`)
-  - `people_detector.py`
-  - `overlay_fused.py`
-  - `behavior_manager.py`
-
-> Megjegyzés: a `models/` mappa ONNX fájljai jelenleg **nem** használtak,  
-> a `people_detector` TFLite modellt **futásidőben tölti le**.
+#### **Raspberry Pi 3**
+- Target platform: **Ubuntu 22.04 + official ROS 2 binaries**
+- Required packages (`vision_msgs`, `vision_opencv`) are included in the distribution.
 
 ---
 
-## 3. Node-architektúra
+### ROS 2 Requirements
 
-### Futó node-ok (camera_and_detectors.launch.py)
+Any full ROS 2 distribution (e.g., Humble) is supported.
 
-- `/video_publisher`
-- `/ball_tracker_rgb`
-- `/people_detector`
-- `/overlay_fused`
-- `/behavior_manager`
+Required packages:
+- `vision_msgs`
+- `vision_opencv` (cv_bridge, image_transport)
 
-### Topic-háló
+---
+
+### Python Environment
+
+- **Python 3.11** (tested on Raspberry Pi OS)
+- **IMPORTANT:** The system requires **NumPy 1.x**  
+  (Example: `numpy==1.26.*`)
+
+NumPy 2.x is **not supported** due to compatibility issues with:
+- TFLite
+- OpenCV
+- ROS 2 bindings
+
+---
+
+## 2. Project Structure
+
+Package name: `mecanumbot_camera`
+
+Key directories and files:
+
+mecanumbot_camera/
+├── launch/
+│ └── camera_and_detectors.launch.py # Main launch file
+├── config/
+│ └── params.yaml # All configurable parameters
+└── mecanumbot_camera/
+├── video_publisher.py
+├── ball_tracker_rgb.py
+├── people_detector.py
+├── overlay_fused.py
+└── behavior_manager.py
+
+yaml
+Kód másolása
+
+> Note:  
+> ONNX files in `models/` are **not used**.  
+> The `people_detector` downloads a **TFLite SSD model at runtime**.
+
+---
+
+## 3. Node Architecture
+
+### Active nodes (from `camera_and_detectors.launch.py`)
+
+/video_publisher
+/ball_tracker_rgb
+/people_detector
+/overlay_fused
+/behavior_manager
+
+bash
+Kód másolása
+
+---
+
+### Topic Graph
 
 ```text
 video_publisher
-  ├─ /camera/image_raw (sensor_msgs/Image)
-  └─ /camera/camera_info (sensor_msgs/CameraInfo)
+  ├─ /camera/image_raw      (sensor_msgs/Image)
+  └─ /camera/camera_info    (sensor_msgs/CameraInfo)
 
 ball_tracker_rgb
-  ├─ /camera/image_mask   (sensor_msgs/Image)    – HSV maszk
-  ├─ /camera/image_debug  (sensor_msgs/Image)    – debug kép
-  └─ /detections/ball     (vision_msgs/Detection2DArray)
+  ├─ /camera/image_mask     (sensor_msgs/Image)  – HSV mask
+  ├─ /camera/image_debug    (sensor_msgs/Image)  – debug view
+  └─ /detections/ball       (vision_msgs/Detection2DArray)
 
 people_detector
-  ├─ /camera/people_debug (sensor_msgs/Image)    – debug overlay
-  └─ /detections/person   (vision_msgs/Detection2DArray)
+  ├─ /camera/people_debug   (sensor_msgs/Image)
+  └─ /detections/person     (vision_msgs/Detection2DArray)
 
 overlay_fused
-  ├─ /camera/fused_debug  (sensor_msgs/Image)    – labda + személy overlay
-  └─ (input: /detections/ball, /detections/person, /camera/image_raw)
+  ├─ /camera/fused_debug    (sensor_msgs/Image)
+  └─ inputs: /detections/ball, /detections/person, /camera/image_raw
 
 behavior_manager
-  ├─ input: /detections/ball (vision_msgs/Detection2DArray)
-  ├─ input: /detections/person (vision_msgs/Detection2DArray)
-  ├─ output: /cmd_vel (geometry_msgs/Twist)
-  └─ output: /gripper_controller/commands (std_msgs/Float64)
+  ├─ inputs:
+  │    /detections/ball     (vision_msgs/Detection2DArray)
+  │    /detections/person   (vision_msgs/Detection2DArray)
+  ├─ outputs:
+       /cmd_vel                    (geometry_msgs/Twist)
+       /gripper_controller/commands (std_msgs/Float64)
+Additional common ROS topic providers:
 
+/tf, /tf_static
 
-Ehhez kapcsolódó egyéb standard topicok:
+/parameter_events, /rosout
 
-/tf, /tf_static, /parameter_events, /rosout, stb.
+/clicked_point, /initialpose, /goal_pose
 
-/clicked_point, /initialpose, /goal_pose (más stack-elemekkel való integrációhoz)
-
-4. Node-onkénti leírás
+4. Node Descriptions
 4.1. video_publisher
+Function:
+Streams frames from the Raspberry Pi camera using a PiCamReader.
 
-Funkció:
-Raspberry Pi kameráról (PiCam) olvas képet, és publikálja /camera/image_raw topicra.
-
+python
+Kód másolása
 class VideoPublisher(Node):
     def __init__(self):
         super().__init__('video_publisher')
-
         self.bridge = CvBridge()
         self.pub = self.create_publisher(Image, '/camera/image_raw', 10)
-
         self.cam = PiCamReader(width=640, height=480, fps=30)
-
         self.timer = self.create_timer(1/30.0, self.tick)
+Input: Raspberry Pi CSI camera
 
+Output:
 
-Bemenet: PiCam (CSI) – PiCamReader(width=640, height=480, fps=30)
+/camera/image_raw
 
-Kimenet:
+/camera/camera_info (if implemented)
 
-/camera/image_raw (sensor_msgs/Image)
-
-/camera/camera_info (ha implementálva van a node-ban)
-
-Megjegyzés: jelenleg nem v4l2 kamera, hanem közvetlen Pi kamera használat.
+Note:
+This node uses PiCam, not a v4l2 USB camera.
 
 4.2. ball_tracker_rgb
+Function:
+Detects a colored (HSV domain) ball in the incoming image.
 
-Funkció:
-HSV-tartomány alapú labda detektálás a /camera/image_raw képeken.
+Key parameters from params.yaml:
+image_topic
 
-Fontos paraméterek:
+mask_image_topic
 
-image_topic – bemeneti képtopic (pl. /camera/image_raw)
+debug_image_topic
 
-mask_image_topic – HSV maszk képtopic (pl. /camera/image_mask)
+det_ball_topic
 
-debug_image_topic – debug overlay (pl. /camera/image_debug)
+hsv_lower, hsv_upper
 
-det_ball_topic – detekciók kimenete (pl. /detections/ball)
+median_ksize
 
-hsv_lower, hsv_upper – HSV tartomány a labdára
+morph_kernel, morph_iters
 
-median_ksize – median blur kernel méret
+min_area_px
 
-morph_kernel, morph_iters – morfológiai szűrés paraméterei
+min_circularity
 
-min_area_px – minimális kontúr terület (zajszűrés)
+use_enclosing_circle
 
-min_circularity – körkörösség küszöb
+Outputs:
+/detections/ball — vision_msgs/Detection2DArray
 
-use_enclosing_circle – köralakú becslés használata
+/camera/image_mask (debug)
 
-Kimenet:
-
-/detections/ball – vision_msgs/Detection2DArray
-
-1 detekció / frame (labda), bounding box + confidence
-
-/camera/image_mask – HSV maszk (debug)
-
-/camera/image_debug – input kép + overlayelt bounding box (debug)
+/camera/image_debug (debug)
 
 4.3. people_detector
+Function:
+Performs person detection using a downloaded TFLite SSD model.
 
-Funkció:
-Személy detektálása TFLite SSD modellel egy képkockán.
-
-Modell letöltés:
-
-A node nem a models/ mappából használ modellt, hanem futásidőben tölti le:
-
+Runtime model download:
+python
+Kód másolása
 def download_model_if_needed(self):
     os.makedirs(MODEL_DIR, exist_ok=True)
 
@@ -190,9 +208,7 @@ def download_model_if_needed(self):
         return MODEL_FILE
 
     zip_path = f"{MODEL_DIR}/model.zip"
-    self.get_logger().info(f"Downloading TFLite SSD model...")
     urllib.request.urlretrieve(MODEL_URL, zip_path)
-    self.get_logger().info(f"Extracting model...")
     with zipfile.ZipFile(zip_path, "r") as z:
         z.extractall(MODEL_DIR)
 
@@ -202,87 +218,86 @@ def download_model_if_needed(self):
                 return os.path.join(root, f)
 
     raise FileNotFoundError("detect.tflite not found after extraction.")
+Model URL is defined in people_detector.py.
 
+Parameters:
+image_topic
 
-A pontos MODEL_URL a kódban van definiálva (people_detector.py).
+det_topic
 
-A ZIP-ből egy *.tflite modell kerül elő, ezt használja inferenciára.
+conf_threshold
 
-Paraméterek:
+infer_every_n (performance tuning)
 
-image_topic – bemeneti képek topicja (pl. /camera/image_raw)
+Outputs:
+/detections/person
 
-det_topic – kimeneti detekciós topic (pl. /detections/person)
-
-conf_threshold – detekció confidence küszöb
-
-infer_every_n – minden n-edik frame-en fut csak inference (Pi CPU kímélése)
-
-Kimenet:
-
-/detections/person – vision_msgs/Detection2DArray
-
-azonosított személy(ek) bounding box-szal
-
-/camera/people_debug – debug kép (eredeti kép + bounding boxok)
+/camera/people_debug
 
 4.4. overlay_fused
+Function:
+Combines ball + person detections into a single debug overlay.
 
-Funkció:
-A labda és személy detekciók egyesítése egy debug overlay képre.
+Inputs:
 
-Bemenet:
+/camera/image_raw
 
-image_topic – tipikusan /camera/image_raw
+/detections/ball
 
-ball_det_topic – /detections/ball
+/detections/person
 
-person_det_topic – /detections/person
+Output:
 
-Kimenet:
-
-out_topic – /camera/fused_debug (annotált kép, mindkét detekcióval)
+/camera/fused_debug
 
 4.5. behavior_manager
+Function:
+A complete FSM managing robot behavior:
 
-Funkció:
-Magas szintű viselkedéskezelés (FSM) a labda → felvétel → gazda megkeresése → labda átadása folyamatra.
+ball search
 
-Input topicok:
+ball following
 
-/detections/ball – vision_msgs/Detection2DArray
+ball grasp
 
-/detections/person – vision_msgs/Detection2DArray
+owner search
 
-Output topicok:
+delivery
 
-/cmd_vel – geometry_msgs/Twist (mozgás vezérlés)
+waiting for new ball
 
-/gripper_controller/commands – std_msgs/Float64 (gripper nyitás/zárás)
+Inputs:
+/detections/ball
 
-Főbb belső paraméterek:
+/detections/person
 
+Outputs:
+/cmd_vel
+
+/gripper_controller/commands
+
+Core parameters:
 image_width = 640
 
-Ball thresholds – hiszterézis:
+Ball thresholds:
 
-fetch_enter_px = 200 – TRACK → FETCH
+fetch_enter_px = 200
 
-fetch_stop_px = 280 – FETCH → GRASP
+fetch_stop_px = 280
 
-Stabilitási követelmények:
+Stability:
 
 REQUIRED_BALL_STABLE = 3
 
 REQUIRED_PERSON_STABLE = 3
 
-Time-outok:
+Timeouts:
 
 ball_lost_timeout = 1.0
 
 person_lost_timeout = 1.0
 
-Vezérlő paraméterek:
+Control gains:
 
 Kp_rot = 0.0025
 
@@ -294,106 +309,46 @@ max_lin = 0.30
 
 search_speed = 0.25
 
-Személy küszöb:
+Delivery:
 
-owner_threshold_px = 150
+grasp_duration = 1.0
 
-Grasp:
+new_ball_absent_time = 2.0
 
-grasp_duration = 1.0 s
-
-Új labda felismerés:
-
-new_ball_absent_time = 2.0 s
-
-Állapotgép (FSM) állapotai:
-
+FSM States:
 SEARCH
-
-A robot forog (twist.angular.z = search_speed), és labdát keres.
-
-Ha egy korábbi delivery után új kört indít:
-
-megvárja, amíg a labda eltűnik new_ball_absent_time ideig
-
-Ha stabilan lát labdát (REQUIRED_BALL_STABLE frame), átmegy TRACK_BALL állapotba.
 
 TRACK_BALL
 
-Labdára áll rá, forgat + előre mozog (compute_ball_control()).
-
-Ha a labda szélessége eléri a fetch_enter_px értéket és stabil, átmegy FETCH állapotba.
-
-Ha elveszíti a labdát → vissza SEARCH.
-
 FETCH
-
-Finom közelítés a labdához (compute_ball_control(slow=True)).
-
-Ha a labda szélessége ≥ fetch_stop_px és stabil,
-
-megállítja a robotot (cmd_pub.publish(Twist()))
-
-állapot: GRASP
 
 GRASP
 
-Lezárja a gripper-t, vár grasp_duration ideig.
-
-Utána → FIND_OWNER, kinullázva a személy-stabilitást.
-
 FIND_OWNER
-
-Személyt keres (/detections/person).
-
-Minimum min_find_owner_time ideig ebben az állapotban marad.
-
-Ha személyt lát: compute_person_control()-lal közelít.
-
-Ha a személy szélessége ≥ owner_threshold_px és stabil (REQUIRED_PERSON_STABLE),
-→ DELIVER.
 
 DELIVER
 
-Megáll, kinyitja a gripper-t (open_gripper()).
+Each transition is fully described inside behavior_manager.py.
 
-deliver_start_time után kb. 2 s-ig marad itt.
+5. Configuration (params.yaml)
+The launch file loads:
 
-Utána → vissza SEARCH
-
-beállítja waiting_for_new_ball = True,
-
-új labdát csak akkor fogad el, ha közben egy ideig nem látott labdát.
-
-5. Konfiguráció (params.yaml)
-
-A camera_and_detectors.launch.py az mecanumbot_camera/config/params.yaml fájlt tölti be:
-
-PathJoinSubstitution([pkg_share, 'config', 'params.yaml']),
-
-
-A params.yaml tartalmazza többek között:
-
-ball_tracker_rgb:
-
-image_topic
-
-debug_image_topic
-
-mask_image_topic
-
-det_ball_topic
-
+arduino
+Kód másolása
+config/params.yaml
+Parameter groups:
+ball_tracker_rgb
 hsv_lower, hsv_upper
+
+image_topic, mask_image_topic, debug_image_topic
+
+morph_kernel, morph_iters, median_ksize
 
 min_area_px, min_circularity
 
-median_ksize, morph_kernel, morph_iters
+det_ball_topic
 
-use_enclosing_circle
-
-people_detector:
-
+people_detector
 image_topic
 
 det_topic
@@ -402,8 +357,7 @@ conf_threshold
 
 infer_every_n
 
-overlay_fused:
-
+overlay_fused
 image_topic
 
 ball_det_topic
@@ -412,133 +366,105 @@ person_det_topic
 
 out_topic
 
-A pontos default értékekért nézd meg a config/params.yaml-t.
+Refer to config/params.yaml for default values.
 
-6. Build és futtatás
-6.1. Forráskód elhelyezése
+6. Building & Running
+6.1. Clone the repository
+bash
+Kód másolása
 mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
 git clone https://github.com/Fortuz/mecanumbot_camera.git
 cd ..
-
-6.2. Függőségek (Ubuntu 22.04 / Pi 3, gyári ROS2)
+6.2. Install dependencies (Ubuntu 22.04 / Pi 3)
+bash
+Kód másolása
 sudo apt update
 sudo apt install \
   ros-<ros2_distro>-vision-msgs \
   ros-<ros2_distro>-vision-opencv \
   python3-pip
+Force NumPy 1.x:
 
-
-NumPy downgrade (ha nem 1.x):
-
+bash
+Kód másolása
 pip3 install --upgrade "numpy<2.0"
-
-
-(ha virtuális környezetet használsz, azt előtte aktiváld)
-
 6.3. Build
+bash
+Kód másolása
 cd ~/ros2_ws
 colcon build --packages-select mecanumbot_camera
 source install/setup.bash
-
-6.4. Futtatás
+6.4. Run
+bash
+Kód másolása
 ros2 launch mecanumbot_camera camera_and_detectors.launch.py
+Expected nodes:
 
-
-Elvárt futó node-ok:
-
+bash
+Kód másolása
 ros2 node list
-# /video_publisher
-# /ball_tracker_rgb
-# /people_detector
-# /overlay_fused
-# /behavior_manager
+Expected topics:
 
-
-Elvárt fő topicok:
-
+bash
+Kód másolása
 ros2 topic list
-# /camera/image_raw
-# /camera/camera_info
-# /camera/image_mask
-# /camera/image_debug
-# /camera/people_debug
-# /camera/fused_debug
-# /detections/ball
-# /detections/person
-# /cmd_vel
-# /gripper_controller/commands
-# ...
+7. Debug & Visualization
+Debug image topics:
 
-7. Debug és vizualizáció
+/camera/image_mask
 
-A debug képek a következő topicokon érhetők el:
+/camera/image_debug
 
-/camera/image_mask – HSV maszk (labda)
+/camera/people_debug
 
-/camera/image_debug – labda detektálás overlay
+/camera/fused_debug
 
-/camera/people_debug – személy detektálás overlay
+View via:
 
-/camera/fused_debug – labda + személy overlay
-
-Megnézhetők pl.:
-
+bash
+Kód másolása
 ros2 run rqt_image_view rqt_image_view
+or RViz / Foxglove.
 
+8. Performance Tuning (Pi 3 / Pi 5)
+People detector
+Increase infer_every_n → fewer inferences, higher FPS
 
-vagy bármely más image viewer-rel (RViz, Foxglove, stb.).
+Increase conf_threshold → more stable detections
 
-8. Teljesítményhangolás (Pi 3 / Pi 5)
+Ball tracker
+Reduce median_ksize, morph_kernel, morph_iters for speed
 
-people_detector:
+Reduce camera resolution or FPS in PiCamReader
 
-infer_every_n növelése → gyorsabb futás, ritkább detektálás
+9. Docker Support (OUTDATED, needs update)
+The repository contains older Dockerfiles that assume:
 
-conf_threshold emelése → kevesebb, de megbízhatóbb detektálás
+v4l2 camera
 
-ball_tracker_rgb:
+ONNX-based detectors
 
-median_ksize, morph_kernel, morph_iters csökkentése → kevesebb blur / morfológia, gyorsabb futás
+No behavior manager
 
-Túl lassú / akadozó viselkedés esetén:
+No TFLite runtime model download
 
-kép felbontás csökkentése (VideoPublisher / PiCamReader paraméterezés)
+These no longer reflect the current stack.
 
-kamerafps csökkentése
+To update Docker support:
 
-9. Docker (jelenleg: frissítés szükséges)
+Base on ros:<ros2_distro>-ros-base (ARM64).
 
-A repo tartalmaz Dockerfile-okat a korábbi, teljesen konténeresített verzióhoz.
-Fontos: ezek még a régi stackre vonatkoznak (v4l2 kamera, ONNX modellfájlok stb.),
-és nem tükrözik a most Pi 5-ön futó konfigurációt:
+Install Python deps + numpy<2.0.
 
-PiCam alapú video_publisher
+Build the package with colcon.
 
-TFLite SSD dinamkus letöltése people_detector-ben
+Expose PiCam or /dev/video*.
 
-behavior_manager FSM integráció
+Set launch file as entrypoint.
 
-A Docker támogatás frissítése során az alábbiakat kell majd megtenni:
+Until updated, native execution on Pi OS / Ubuntu 22.04 is recommended.
 
-Base image: ARM64-es ros:<ros2_distro>-ros-base image használata.
+10. License
+(Fill in the license for your project, for example MIT or Apache-2.0.)
 
-Python függőségek + numpy<2.0 fixálása.
-
-A mecanumbot_camera package beépítése a konténerben (colcon build).
-
-Kamera device (/dev/video* vagy PiCam) és szükséges udev/jogosultságok átadása.
-
-A camera_and_detectors.launch.py legyen az entrypoint.
-
-Amíg ez nincs kész, javasolt natív futtatás Pi OS / Ubuntu 22.04 alatt.
-
-10. Licenc
-
-(Töltsd ki a saját licenceddel – pl. Apache 2.0 / MIT, stb.)
-
-
----
-
-Ha szeretnéd, a következő körben tudok hozzá írni egy **konkrét, Pi-re optimalizált Dockerfile**-t is (pl. `Dockerfile.pi5`), ami már ehhez a stackhez igazodik, és mellé egy minimál `docker-compose.yml`-t.
-::contentReference[oaicite:0]{index=0}
