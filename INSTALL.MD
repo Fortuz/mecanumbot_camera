@@ -2,7 +2,52 @@
 
 Step-by-step instructions for bringing up `mecanumbot_camera` on Raspberry Pi hardware (Pi 5 or Pi 3) or a desktop ROS 2 workstation.
 
-The guide assumes **Ubuntu 22.04 + ROS2 Humble**.
+---
+
+## 1. Prerequisites
+
+### Hardware
+
+- **Pi 5**: Raspberry Pi OS 64-bit with PiCamera (CSI) module.
+- **Pi 3**: Ubuntu 22.04 with USB camera or external Pi camera node (Ubuntu images lack libcamera support).
+- Optional mecanum-drive robot base exposing `/cmd_vel` and `/gripper_controller/commands`.
+
+### Software
+
+- **ROS 2 Humble** (full install recommended).
+- `vision_msgs`, `vision_opencv`, `cv_bridge`, `image_transport`.
+- Python **3.11** with:
+  - `numpy==1.26.*`
+  - `opencv-python-headless==4.9.0.80`
+  - `tflite-runtime` (see below)
+  - `pyyaml`
+
+Install the ROS packages via apt:
+
+```bash
+sudo apt update
+sudo apt install \
+  ros-humble-vision-msgs \
+  ros-humble-vision-opencv \
+  ros-humble-cv-bridge \
+  ros-humble-image-transport
+```
+
+Install the Python packages:
+
+```bash
+python3 -m pip install --upgrade pip
+python3 -m pip install "numpy<2.0" opencv-python-headless==4.9.0.80 pyyaml
+```
+
+TensorFlow Lite runtime differs per platform:
+
+- **Pi 5 (aarch64)**  
+  `pip install https://github.com/google-coral/pycoral/releases/download/release-frogfish/tflite_runtime-2.14.0-cp311-cp311-linux_aarch64.whl`
+- **Pi 3 (armv7l)**  
+  `pip install tflite-runtime`
+- **x86_64 dev box**  
+  `pip install tflite-runtime`
 
 ---
 
