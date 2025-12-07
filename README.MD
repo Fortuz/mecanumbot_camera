@@ -10,6 +10,7 @@ ROS 2 camera, detection, and behavior-control stack for a mecanum-drive robot th
 - `overlay_fused` draws both detections over the camera feed on `/camera/fused_debug`
 - `behavior_manager` runs the complete fetch/deliver FSM (search -> track -> fetch -> grasp -> find owner -> deliver -> wait)
 - Designed for live visualization in RViz/Foxglove using the debug topics, especially `/camera/fused_debug`.
+- Sample Pi camera recordings live in `media/`; use them to exercise the nodes when real hardware is not attached (e.g., publish them via `ros2 bag play` or a custom script).
 - One command launches the full stack:
 
 ```bash
