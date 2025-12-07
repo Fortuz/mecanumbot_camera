@@ -1,41 +1,78 @@
 # mecanumbot_camera
 
-A ROS 2 based camera, detection, and behavior-control stack for a mecanum-drive robot that targets Raspberry Pi hardware.
+ROS 2 camera, detection, and behavior-control stack for a mecanum-drive robot that targets Raspberry Pi hardware. It streams video, detects balls and people, fuses the views into a debug overlay, and drives an autonomous FSM to fetch and deliver the ball.
 
 ## Features
 
-- Raspberry Pi camera streaming via `video_publisher` published on `/camera/image_raw`
-- HSV ball detection (`ball_tracker_rgb`) that publishes `/detections/ball` plus mask/debug feeds
-- TFLite SSD person detection (`people_detector`) that publishes `/detections/person`
-- A fused visualization node (`overlay_fused`) subscribed to the main image and both detection topics
-- Full robot behavior finite state machine (`behavior_manager`) that handles searching, tracking, fetching, owner finding, delivery, and idling
-
-Launch the entire stack with:
+- Raspberry Pi camera streaming via `video_publisher` -> `/camera/image_raw`
+- HSV ball detection (`ball_tracker_rgb`) publishing `/detections/ball` plus mask/debug images
+- TensorFlow Lite SSD person detection (`people_detector`) publishing `/detections/person`
+- `overlay_fused` draws both detections over the camera feed on `/camera/fused_debug`
+- `behavior_manager` runs the complete fetch/deliver FSM (search -> track -> fetch -> grasp -> find owner -> deliver -> wait)
+- One command launches the full stack:
 
 ```bash
 ros2 launch mecanumbot_camera camera_and_detectors.launch.py
 ```
 
-> **Note:** The legacy ONNX files in `models/` are not used. `people_detector` downloads the required TFLite SSD model at runtime.
+> Legacy ONNX models in `models/` are not used anymore. The people detector downloads a TFLite model at runtime.
 
 ---
 
 ## 1. Hardware & Software Requirements
 
-### Supported hardware
+### 1.1 Supported hardware
 
-- **Raspberry Pi 5** - Raspberry Pi OS, ROS 2 from source, `vision_msgs` and `vision_opencv` built from source
-- **Raspberry Pi 3** - Ubuntu 22.04 with official ROS 2 binaries that already contain `vision_msgs` and `vision_opencv`
+**Raspberry Pi 5**
+- Raspberry Pi OS (64-bit) with ROS 2 built from source
+- `vision_msgs` and `vision_opencv` also built from source
+- Uses the PiCamReader (libcamera) backend; no `/dev/video*` node is needed
 
-### ROS 2 requirements
+**Raspberry Pi 3**
+- Ubuntu 22.04 with the official ROS 2 binaries
+- `vision_msgs` and `vision_opencv` installed from apt
+- Default image lacks native libcamera support; connect a USB camera via v4l2 or add a PiCam wrapper node
 
-Any full ROS 2 distribution (e.g. Humble) works as long as `vision_msgs` and `vision_opencv` (cv_bridge, image_transport) are present.
+### 1.2 ROS 2 requirements
 
-### Python environment
+Any full ROS 2 distribution (Humble tested) as long as the following packages are installed:
 
-- Python 3.11 (tested on Raspberry Pi OS)
-- NumPy **must** stay on the 1.x series (e.g. `numpy==1.26.*`)
-- NumPy 2.x is incompatible with TensorFlow Lite, OpenCV, and the ROS 2 Python bindings used here
+```bash
+sudo apt install \
+  ros-<ros2_distro>-cv-bridge \
+  ros-<ros2_distro>-vision-msgs \
+  ros-<ros2_distro>-vision-opencv
+```
+
+### 1.3 Python requirements
+
+| Component       | Required version      | Notes                                                                                     |
+|-----------------|-----------------------|-------------------------------------------------------------------------------------------|
+| Python          | 3.11.x                | Tested on Raspberry Pi OS. Python 3.12 is not recommended yet.                            |
+| NumPy           | >=1.23 and <2.0       | NumPy 2.x breaks TFLite + OpenCV + rclpy ABI. Recommended pin: `numpy==1.26.4`.           |
+| OpenCV          | 4.7.x recommended     | Newer builds sometimes break TFLite + `cv_bridge` ABI on ARM hardware.                    |
+| tflite-runtime  | Matching Python ABI   | Required by `people_detector`. Use prebuilt wheels rather than `onnxruntime` on the Pi.   |
+
+**Installing TensorFlow Lite runtime**
+
+Pi 5 (aarch64):
+
+```bash
+pip install https://github.com/google-coral/pycoral/releases/download/release-frogfish/tflite_runtime-2.14.0-cp311-cp311-linux_aarch64.whl
+```
+
+Pi 3 (armv7l):
+
+```bash
+pip install tflite-runtime
+```
+
+### 1.4 Camera requirements
+
+- Pi 5 builds rely on `PiCamReader` using libcamera; no `/dev/video0` is necessary.
+- Pi 3 on Ubuntu 22.04 does not ship libcamera PiCam support, so either:
+  - Use a USB camera exposed as a v4l2 device, or
+  - Provide a custom PiCam wrapper node (not included in this repository).
 
 ---
 
@@ -44,7 +81,7 @@ Any full ROS 2 distribution (e.g. Humble) works as long as `vision_msgs` and `vi
 ```text
 mecanumbot_camera/
 |-- config/
-|   \-- params.yaml                  # All configurable parameters
+|   \-- params.yaml                    # All configurable parameters
 |-- launch/
 |   \-- camera_and_detectors.launch.py
 |-- mecanumbot_camera/
@@ -53,15 +90,15 @@ mecanumbot_camera/
 |   |-- people_detector.py
 |   |-- overlay_fused.py
 |   \-- behavior_manager.py
-|-- models/                          # Only used for historical ONNX artifacts
-\-- media/, resource/, config/, etc.
+|-- models/                            # Legacy ONNX artifacts (unused)
+\-- media/, resource/, etc.
 ```
 
 ---
 
 ## 3. Node Architecture
 
-### Active nodes (camera_and_detectors.launch.py)
+### Active nodes (from `camera_and_detectors.launch.py`)
 
 - `/video_publisher`
 - `/ball_tracker_rgb`
@@ -78,7 +115,7 @@ video_publisher
 
 ball_tracker_rgb
   -> /camera/image_mask       (sensor_msgs/Image)  HSV mask
-  -> /camera/image_debug      (sensor_msgs/Image)  debug view
+  -> /camera/image_debug      (sensor_msgs/Image)  debug visualization
   -> /detections/ball         (vision_msgs/Detection2DArray)
 
 people_detector
@@ -94,69 +131,73 @@ overlay_fused
 behavior_manager
   <- /detections/ball
   <- /detections/person
-  -> /cmd_vel                 (geometry_msgs/Twist)
-  -> /gripper_controller/commands (std_msgs/Float64)
+  -> /cmd_vel                      (geometry_msgs/Twist)
+  -> /gripper_controller/commands  (std_msgs/Float64)
 
-Common ROS infrastructure topics such as `/tf`, `/tf_static`, `/rosout`, `/parameter_events`,
-`/clicked_point`, `/initialpose`, and `/goal_pose` are also present.
+Standard ROS infrastructure topics (`/tf`, `/tf_static`, `/rosout`, `/parameter_events`,
+`/clicked_point`, `/initialpose`, `/goal_pose`) are present when running inside a full ROS system.
 ```
 
-### Node summaries
+---
 
-#### video_publisher
+## 4. Node Descriptions
 
-Streams frames from the Raspberry Pi CSI camera through `PiCamReader`, converts them with `cv_bridge`, and publishes `/camera/image_raw` along with camera info. It is optimized for Pi camera hardware rather than a USB v4l2 device.
+### 4.1 `video_publisher`
 
-#### ball_tracker_rgb
+Streams 640x480@30 FPS frames from the Raspberry Pi CSI camera through `PiCamReader`, converts them with `cv_bridge`, and publishes `/camera/image_raw` (plus camera info if configured).
 
-Performs HSV based color segmentation to detect the tracked ball.
+### 4.2 `ball_tracker_rgb`
+
+HSV-based color segmentation to detect the tracked ball.
 
 - **Key parameters:** `image_topic`, `mask_image_topic`, `debug_image_topic`, `det_ball_topic`,
   `hsv_lower`, `hsv_upper`, `median_ksize`, `morph_kernel`, `morph_iters`,
-  `min_area_px`, `min_circularity`, and `use_enclosing_circle`.
+  `min_area_px`, `min_circularity`, `use_enclosing_circle`.
 - **Outputs:** `/detections/ball`, `/camera/image_mask`, `/camera/image_debug`.
 
-#### people_detector
+### 4.3 `people_detector`
 
-Runs a TensorFlow Lite SSD person detector. The first launch ensures that the model defined in
-`people_detector.py` is downloaded and extracted inside `models/` before inference starts.
+Runs a TensorFlow Lite SSD model. If the model is missing, it is downloaded and extracted automatically at startup.
 
-- **Key parameters:** `image_topic`, `det_topic`, `conf_threshold`, `infer_every_n`.
+- **Key parameters:** `image_topic`, `det_topic`, `conf_threshold`, `infer_every_n` (throttles inference for higher FPS on Pis).
 - **Outputs:** `/detections/person`, `/camera/people_debug`.
+- **Note:** Uses `tflite-runtime` exclusively; ONNX or `onnxruntime` are not required.
 
-#### overlay_fused
+### 4.4 `overlay_fused`
 
-Combines the raw camera feed with ball and person detections to provide a single debug overlay on `/camera/fused_debug`.
+Fuses `/camera/image_raw`, `/detections/ball`, and `/detections/person` into `/camera/fused_debug` for visualization.
 
-#### behavior_manager
+### 4.5 `behavior_manager`
 
-Implements the finite state machine that manages robot behavior, including search, tracking, fetch, grasp, owner finding, delivery, and waiting for the next ball.
+Finite state machine that controls robot locomotion and gripper behavior.
 
 - **Inputs:** `/detections/ball`, `/detections/person`.
 - **Outputs:** `/cmd_vel`, `/gripper_controller/commands`.
-- **Notable parameters:** `image_width`, `fetch_enter_px`, `fetch_stop_px`, `REQUIRED_BALL_STABLE`,
-  `REQUIRED_PERSON_STABLE`, `ball_lost_timeout`, `person_lost_timeout`,
-  `Kp_rot`, `Kp_fwd`, `max_ang`, `max_lin`, `search_speed`,
-  `grasp_duration`, `new_ball_absent_time`.
+- **States:** `SEARCH`, `TRACK_BALL`, `FETCH`, `GRASP`, `FIND_OWNER`, `DELIVER`, and idle/waiting transitions.
+- **Important parameters:** `image_width=640`, `fetch_enter_px=200`, `fetch_stop_px=280`,
+  `REQUIRED_BALL_STABLE=3`, `REQUIRED_PERSON_STABLE=3`, `ball_lost_timeout=1.0`,
+  `person_lost_timeout=1.0`, `new_ball_absent_time=2.0`, `Kp_rot=0.0025`, `Kp_fwd=0.015`,
+  `max_ang=0.8`, `max_lin=0.30`.
 
 ---
 
-## 4. Configuration (config/params.yaml)
+## 5. Configuration (`config/params.yaml`)
 
-`camera_and_detectors.launch.py` loads `config/params.yaml`, which is organized into the following groups:
+`camera_and_detectors.launch.py` loads `config/params.yaml` using `PathJoinSubstitution`.
+The YAML file groups parameters per node:
 
-- `ball_tracker_rgb`: HSV thresholds, morphological operations, min area/circularity, and topic names.
-- `people_detector`: input topic, detection topic, confidence threshold, inference throttling.
-- `overlay_fused`: input topics and output overlay topic.
-- `behavior_manager`: PID gains, geometric thresholds, timeouts, and FSM tuning (see code comments for full list).
+- `ball_tracker_rgb`: HSV thresholds, morphological kernel sizes/iterations, minimum contour properties, topic names.
+- `people_detector`: camera topic, detection topic, confidence threshold, `infer_every_n`.
+- `overlay_fused`: ball/person input topics plus the fused debug output topic.
+- `behavior_manager`: geometric thresholds, PID gains, timeouts, and FSM tuning constants.
 
-Edit the YAML file to adapt the system to different lighting conditions, camera resolutions, or robot dynamics.
+Edit the YAML to adjust for lighting conditions, camera resolution, or robot-specific dynamics.
 
 ---
 
-## 5. Building & Running
+## 6. Building & Running
 
-### 5.1 Clone the repository
+### 6.1 Clone
 
 ```bash
 mkdir -p ~/ros2_ws/src
@@ -165,7 +206,7 @@ git clone https://github.com/Fortuz/mecanumbot_camera.git
 cd ..
 ```
 
-### 5.2 Install dependencies (Ubuntu 22.04 or Raspberry Pi 3)
+### 6.2 Install dependencies (Ubuntu 22.04 / Pi 3)
 
 ```bash
 sudo apt update
@@ -175,13 +216,13 @@ sudo apt install \
   python3-pip
 ```
 
-### 5.3 Force NumPy 1.x
+### 6.3 Force NumPy < 2.0
 
 ```bash
-pip3 install --upgrade "numpy<2.0"
+pip install --upgrade "numpy<2.0"
 ```
 
-### 5.4 Build
+### 6.4 Build
 
 ```bash
 cd ~/ros2_ws
@@ -189,13 +230,13 @@ colcon build --packages-select mecanumbot_camera
 source install/setup.bash
 ```
 
-### 5.5 Run the stack
+### 6.5 Run
 
 ```bash
 ros2 launch mecanumbot_camera camera_and_detectors.launch.py
 ```
 
-### 5.6 Inspect nodes and topics
+### 6.6 Inspect
 
 ```bash
 ros2 node list
@@ -204,50 +245,43 @@ ros2 topic list
 
 ---
 
-## 6. Debug & Visualization
+## 7. Debugging & Visualization
 
-Useful debug topics:
-
-- `/camera/image_mask`
-- `/camera/image_debug`
-- `/camera/people_debug`
-- `/camera/fused_debug`
-
-View them with:
+- Debug topics: `/camera/image_mask`, `/camera/image_debug`, `/camera/people_debug`, `/camera/fused_debug`.
+- View streams with:
 
 ```bash
 ros2 run rqt_image_view rqt_image_view
 ```
 
-RViz or Foxglove can also be used for visualization.
+RViz or Foxglove can also visualize the topics.
 
 ---
 
-## 7. Performance Tuning (Raspberry Pi 3 / Raspberry Pi 5)
+## 8. Performance Tuning (Pi 3 / Pi 5)
 
-- Increase `infer_every_n` in `people_detector` to skip frames and gain FPS.
-- Increase `conf_threshold` for more stable person detections.
-- Reduce `median_ksize`, `morph_kernel`, and `morph_iters` in `ball_tracker_rgb` to save CPU.
-- Lower camera resolution or FPS in `PiCamReader` if the CPU or ISP is overloaded.
+- Increase `infer_every_n` to skip frames in `people_detector` for higher FPS.
+- Increase `conf_threshold` for more stable person detections in noisy scenes.
+- Reduce `median_ksize`, `morph_kernel`, and `morph_iters` in `ball_tracker_rgb` to reduce CPU load.
+- Lower Pi camera resolution or FPS in `PiCamReader` if resources are constrained.
 
 ---
 
-## 8. Docker Support (outdated)
+## 9. Docker Support (outdated)
 
-The repository contains legacy Dockerfiles that assumed a v4l2 camera, ONNX detectors, no behavior manager, and no TFLite model download. They no longer reflect the current stack.
+Existing Dockerfiles reference an older architecture (v4l2 camera, ONNX detectors, no behavior manager, no TFLite downloads). To modernize:
 
-To modernize Docker support you would need to:
-
-1. Base the image on `ros:<ros2_distro>-ros-base` (ARM64).
-2. Install Python dependencies with `numpy<2.0`.
-3. Build the package with `colcon`.
+1. Base on `ros:<ros2_distro>-ros-base` (ARM64).
+2. Install Python deps with `numpy<2.0` plus `tflite-runtime`.
+3. Build the package via `colcon`.
 4. Expose the Pi camera or `/dev/video*`.
 5. Use `camera_and_detectors.launch.py` as the entrypoint.
 
-Until such an update is completed, run the stack natively on Raspberry Pi OS or Ubuntu 22.04.
+Until then, native execution on Pi OS or Ubuntu 22.04 is recommended.
 
 ---
 
-## 9. License
+## 10. License
 
-Add your preferred license text here (e.g. MIT, Apache-2.0, or proprietary).
+Insert your preferred project license (e.g., MIT, Apache-2.0, proprietary).
+
