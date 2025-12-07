@@ -288,6 +288,28 @@ stateDiagram-v2
     DELIVER --> SEARCH: delivery_wait_done
 ```
 
+### SEQUENCE DIAGRAM: What happens when the robot sees a ball?
+```mermaid
+sequenceDiagram
+    autonumber
+
+    Camera->>BallDetector: image_raw
+    BallDetector->>BehaviorManager: ball detection
+    BehaviorManager->>RobotBase: cmd_vel (rotate or approach)
+    
+    RobotBase-->>BehaviorManager: position feedback (implicit)
+
+    BallDetector->>BehaviorManager: ball_width increases
+    BehaviorManager->>Gripper: close (start grasp)
+    
+    BehaviorManager->>PersonDetector: request person position
+    PersonDetector->>BehaviorManager: person detection
+    
+    BehaviorManager->>RobotBase: approach owner
+    BehaviorManager->>Gripper: open (deliver)
+
+```
+
 ---
 
 ## 5. Configuration (`config/params.yaml`)
