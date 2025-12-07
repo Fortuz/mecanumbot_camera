@@ -106,14 +106,22 @@ flowchart LR
 
     cam[Camera Node<br/>/camera/image_raw]
 
-    cam --> detBall[Ball Detector<br/>(ONNX)]
-    cam --> detPerson[Person Detector<br/>(ONNX)]
+    detBall[Ball Detector<br/>(ONNX)]
+    detPerson[Person Detector<br/>(ONNX)]
 
-    detBall -->|/detections/ball| behavior[BehaviorManager]
+    behavior[BehaviorManager]
+    cmd[Base Controller]
+    grip[Gripper Controller]
+
+    cam --> detBall
+    cam --> detPerson
+
+    detBall -->|/detections/ball| behavior
     detPerson -->|/detections/person| behavior
 
-    behavior -->|/cmd_vel| cmd[Base Controller]
-    behavior -->|/gripper_controller/commands| grip[Gripper Controller]
+    behavior -->|/cmd_vel| cmd
+    behavior -->|/gripper_controller/commands| grip
+
 ```
 
 ### Active nodes (from `camera_and_detectors.launch.py`)
