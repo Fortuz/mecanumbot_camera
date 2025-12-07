@@ -195,24 +195,38 @@ stateDiagram-v2
 
     [*] --> SEARCH
 
-    state SEARCH {
-        direction TB
-        [*] --> ROTATE
-        ROTATE --> ROTATE: waiting_for_new_ball && !ball_not_seen_long_enough
-        ROTATE --> TRACK_BALL: ball_seen && stable_ball && !waiting_for_new_ball
-        TRACK_BALL --> ROTATE: !ball_seen
-        TRACK_BALL --> FETCH: stable_ball && ball_width_px >= fetch_enter_px
-    }
+    %% =========================
+    %% SEARCH (no internal substate box to reduce curve complexity)
+    %% =========================
+    SEARCH --> ROTATE: start searching
+    ROTATE --> ROTATE: waiting_for_new_ball && !ball_not_seen_long_enough
+    ROTATE --> TRACK_BALL: ball_seen && stable_ball && !waiting_for_new_ball
 
+    %% main transition out of SEARCH
+    TRACK_BALL --> SEARCH: !ball_seen
+    TRACK_BALL --> FETCH: stable_ball && ball_width_px >= fetch_enter_px
+
+    %% =========================
+    %% FETCH
+    %% =========================
     FETCH --> SEARCH: !ball_seen
     FETCH --> GRASP: stable_ball && ball_width_px >= fetch_stop_px
 
+    %% =========================
+    %% GRASP
+    %% =========================
     GRASP --> FIND_OWNER: grasp_duration_elapsed
 
+    %% =========================
+    %% FIND_OWNER
+    %% =========================
     FIND_OWNER --> FIND_OWNER: !person_seen
     FIND_OWNER --> FIND_OWNER: person_seen && (!stable_person || !person_close_enough)
     FIND_OWNER --> DELIVER: person_seen && stable_person && person_close_enough && time_min_reached
 
+    %% =========================
+    %% DELIVER
+    %% =========================
     DELIVER --> SEARCH: delivery_wait_done
 ```
 
