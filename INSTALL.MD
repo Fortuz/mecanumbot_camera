@@ -1,124 +1,131 @@
 # Installation Guide
 
-This document describes how to install and run the full mecanumbot_camera system, including:
-- camera streaming,
-- classical CV-based ball detection,
-- TFLite-based person detection,
-- the Behavior Manager FSM,
-- robot base and gripper interaction.
+Step-by-step instructions for bringing up `mecanumbot_camera` on Raspberry Pi hardware (Pi 5 or Pi 3) or a desktop ROS 2 workstation.
 
 The guide assumes **Ubuntu 22.04 + ROS2 Humble**.
 
 ---
 
-## 1. System Requirements
+## 2. Create a ROS 2 workspace and clone
 
-- Ubuntu 22.04
-- ROS2 Humble
-- Python 3.10+
-- OpenCV (for classical ball detection)
-- tflite-runtime (for person detection)
-- vision_msgs (ROS2 message type)
-- A USB camera or real robot camera source
+```bash
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws/src
+git clone https://github.com/Fortuz/mecanumbot_camera.git
+cd ..
+```
+
+If you plan to edit the package, keep the repo under version control inside `~/ros2_ws/src`.
 
 ---
 
-## 2. Clone and Build the Package
+## 3. Build the package
 
 ```bash
-git clone https://github.com/Fortuz/mecanumbot_camera
-cd mecanumbot_camera
-colcon build --symlink-install
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select mecanumbot_camera
 source install/setup.bash
-3. Install Python Dependencies
-OpenCV (ball detection)
-bash
-Kód másolása
-pip install opencv-python
-TFLite runtime (person detection)
-For x86_64:
+```
 
-bash
-Kód másolása
-pip install tflite-runtime
-For Jetson / ARM systems:
+For iterative development you can use `colcon build --symlink-install`.
 
-bash
-Kód másolása
-sudo apt-get install python3-tflite-runtime
-4. Launching Components Individually
-Camera
-bash
-Kód másolása
-ros2 launch mecanumbot_camera camera.launch.py
-Ball Detector (OpenCV)
-bash
-Kód másolása
-ros2 run mecanumbot_camera ball_detector
-Person Detector (TFLite)
-bash
-Kód másolása
-ros2 run mecanumbot_camera person_detector
-Behavior Manager FSM
-bash
-Kód másolása
-ros2 run mecanumbot_camera behavior_manager
-5. Running the Full Integrated System
-bash
-Kód másolása
-ros2 launch mecanumbot_camera full_system.launch.py
-This launch file starts:
+---
 
-camera node
+## 4. Launch options
 
-ball detector
+### Full stack
 
-person detector
+```bash
+ros2 launch mecanumbot_camera camera_and_detectors.launch.py
+```
 
-behavior manager
+This starts the following nodes:
+- `video_publisher` (PiCamReader) - publishes `/camera/image_raw`
+- `ball_tracker_rgb`
+- `people_detector`
+- `overlay_fused`
+- `behavior_manager`
 
-all required topics (/detections/ball, /detections/person, /cmd_vel, /gripper_controller/commands)
+### Using an existing camera source
 
-6. Troubleshooting
-No camera detected
-swift
-Kód másolása
-[ERROR] Cannot open /dev/video0
-Check udev permissions
+If your robot already publishes `/camera/image_raw`, run only the detection/behavior nodes and remap their input topics:
 
-Try: sudo chmod 666 /dev/video0
+```bash
+ros2 run mecanumbot_camera ball_tracker_rgb \
+  --ros-args -p image_topic:=/your/camera/image_raw
+```
 
-No /detections/person messages
-TFLite model path is incorrect
+Launch the other nodes similarly:
 
-TFLite runtime missing
+```bash
+ros2 run mecanumbot_camera people_detector \
+  --ros-args -p image_topic:=/your/camera/image_raw
 
-Person too small or not in field of view
+ros2 run mecanumbot_camera overlay_fused \
+  --ros-args -p image_topic:=/your/camera/image_raw
+```
 
-No /detections/ball messages
-Incorrect HSV threshold
+Alternatively, duplicate `launch/camera_and_detectors.launch.py`, remove the `video_publisher` block, and adjust the parameters before launching.
 
-Poor lighting conditions
+### Playing back sample media
 
-Tune classical CV thresholds in ball_detector.py
+Use the videos under `media/` when hardware is unavailable. Publish them to `/camera/image_raw` using your preferred tool (e.g., `ros2 bag play`, `image_publisher`, or a custom script) before launching the stack.
 
-Robot does not move
-/cmd_vel namespace mismatch
+---
 
-Check ros2 topic echo /cmd_vel
+## 5. Verifying
 
-Ensure base controller is running
+After the stack starts:
 
-7. Notes for Real-Robot Deployment
-Use a USB camera with exposure locked for stable ball tracking
+```bash
+ros2 node list
+ros2 topic list
+ros2 topic echo /detections/ball --once
+ros2 topic echo /detections/person --once
+```
 
-Ensure gripper calibration before running GRASP state
+Visualize debug feeds with RViz or `rqt_image_view`:
 
-If latency is high, reduce image resolution in the camera node
+```bash
+ros2 run rqt_image_view rqt_image_view
+```
 
-8. Uninstall
-To remove the workspace:
+Add `/camera/image_debug`, `/camera/people_debug`, or `/camera/fused_debug` to confirm the overlay is active.
 
-bash
-Kód másolása
-rm -rf install build log
+---
+
+## 6. Troubleshooting
+
+| Symptom | Checks |
+|---------|--------|
+| `/camera/image_raw` missing | Ensure PiCamReader has access to the CSI camera. On Pi 3 + Ubuntu, use a USB camera or external driver. |
+| No `/detections/ball` | Tune HSV thresholds (`ros2 param set /ball_tracker_rgb hsv_lower "[H,S,V]"`), adjust lighting, verify mask on `/camera/image_mask`. |
+| No `/detections/person` | Confirm `tflite-runtime` installed, check network connectivity for first model download, raise `infer_every_n` to reduce CPU load. |
+| Behavior manager not moving robot | Confirm `/cmd_vel` and `/gripper_controller/commands` are connected to the base/gripper drivers. Use `ros2 topic echo` to inspect. |
+| Docker X11 issues on Windows | Ensure VcXsrv/x410 runs, set `DISPLAY=host.docker.internal:0.0`, allow public access in the X server settings. |
+
+---
+
+## 7. Clean rebuild / uninstall
+
+To wipe build artifacts:
+
+```bash
+cd ~/ros2_ws
+rm -rf build install log
+```
+
+Delete the repository if desired:
+
+```bash
+rm -rf ~/ros2_ws/src/mecanumbot_camera
+```
+
+---
+
+## 8. Next steps
+
+- Adjust parameters in `config/params.yaml` (ball tracker HSV bounds, people detector topics, overlay inputs).
+- Tune FSM constants inside `mecanumbot_camera/behavior_manager.py` if your robot dimensions differ.
+- Explore the Docker workflow in `README.MD` if you prefer containerized development on Windows.
