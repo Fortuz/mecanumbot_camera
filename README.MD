@@ -133,6 +133,10 @@ flowchart LR
 - `/behavior_manager`
 
 ### Topic Flow Diagram (Data Pipeline)
+
+The previous diagram shows the ROS2 node-level architecture,
+while the second diagram gives a simplified view of the data flow through the system.
+
 ```mermaid
 flowchart LR
    A(Camera frames) --> B(Ball detector)
