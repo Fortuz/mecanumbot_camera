@@ -184,6 +184,11 @@ Finite state machine that controls robot locomotion and gripper behavior.
 
 ### ⚙️ Behavior Manager – State Machine
 
+The robot’s behavior is controlled by a six-state finite state machine (FSM):
+SEARCH → TRACK_BALL → FETCH → GRASP → FIND_OWNER → DELIVER
+
+The states and transitions can be followed below:
+
 ```mermaid
 stateDiagram-v2
     direction TB
