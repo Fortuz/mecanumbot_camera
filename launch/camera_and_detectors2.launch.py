@@ -40,13 +40,13 @@ def generate_launch_description():
         # --------------------------------------------------
         # 3) People detector
         # --------------------------------------------------
-        Node(
-            package='mecanumbot_camera',
-            executable='people_detector',
-            name='people_detector',
-            output='screen',
-            parameters=[params]
-        ),
+        #Node(
+        #    package='mecanumbot_camera',
+        #    executable='people_detector',
+        #    name='people_detector',
+        #    output='screen',
+        #    parameters=[params]
+        #),
 
         # --------------------------------------------------
         # 4) Overlay node → /camera/image_overlayed
