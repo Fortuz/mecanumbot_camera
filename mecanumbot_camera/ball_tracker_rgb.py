@@ -2,6 +2,7 @@
 import rclpy, cv2, numpy as np
 from rclpy.node import Node
 from rclpy.parameter import Parameter
+from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import SetParametersResult
 from sensor_msgs.msg import Image, CameraInfo
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
@@ -31,6 +32,8 @@ class BallTrackerRGB(Node):
             ('det_ball_topic', '/detections/ball'),
             ('debug_image_topic', '/camera/image_debug'),
             ('mask_image_topic', '/camera/image_mask'),
+            ('publish_debug_image', True),
+            ('publish_mask_image', True),
         ])
 
         vals = [p.value for p in self.get_parameters([
@@ -47,12 +50,15 @@ class BallTrackerRGB(Node):
             'det_ball_topic',
             'debug_image_topic',
             'mask_image_topic',
+            'publish_debug_image',
+            'publish_mask_image',
         ])]
 
         (self.image_topic, info_topic, hsv_l, hsv_u, self.min_area,
          self.min_circularity, self.morph_kernel, self.morph_iters,
          self.median_ksize, self.use_enclosing_circle,
-         det_topic, dbg_topic, mask_topic) = vals
+         det_topic, dbg_topic, mask_topic,
+         self.publish_debug_image, self.publish_mask_image) = vals
 
         # Internal (numpy) copies of HSV thresholds
         self.hsv_lower = np.array(hsv_l, dtype=np.uint8)
@@ -60,9 +66,9 @@ class BallTrackerRGB(Node):
 
         self.bridge = CvBridge()
         self.create_subscription(CameraInfo, info_topic, self.on_info, 10)
-        self.create_subscription(Image, self.image_topic, self.on_image, 10)
+        self.create_subscription(Image, self.image_topic, self.on_image, qos_profile_sensor_data)
         self.pub_det  = self.create_publisher(Detection2DArray, det_topic, 10)
-        self.pub_dbg  = self.create_publisher(Image, dbg_topic, 10)
+        self.pub_dbg = self.create_publisher(Image, dbg_topic, 10)
         self.pub_mask = self.create_publisher(Image, mask_topic, 10)
 
         # React to live param changes (ros2 param set ...)
@@ -70,6 +76,7 @@ class BallTrackerRGB(Node):
 
         self.get_logger().info(
             f'Ball tracker: debug={dbg_topic} mask={mask_topic} '
+            f'publish_debug={self.publish_debug_image} publish_mask={self.publish_mask_image} '
             f'HSV lower={self.hsv_lower.tolist()} upper={self.hsv_upper.tolist()} '
             f'min_area={self.min_area}, min_circ={self.min_circularity}, '
             f'closing k={self.morph_kernel}x{self.morph_kernel} iters={self.morph_iters}, '
@@ -100,6 +107,10 @@ class BallTrackerRGB(Node):
                     self.median_ksize = int(p.value)
                 elif p.name == 'use_enclosing_circle':
                     self.use_enclosing_circle = bool(p.value)
+                elif p.name == 'publish_debug_image':
+                    self.publish_debug_image = bool(p.value)
+                elif p.name == 'publish_mask_image':
+                    self.publish_mask_image = bool(p.value)
             return SetParametersResult(successful=True)
         except Exception as e:
             self.get_logger().error(f'Param update error: {e}')
@@ -127,9 +138,10 @@ class BallTrackerRGB(Node):
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=iters)
 
         # Publish binary mask (for Foxglove tuning)
-        mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
-        mask_msg.header = img_msg.header
-        self.pub_mask.publish(mask_msg)
+        if self.publish_mask_image:
+            mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
+            mask_msg.header = img_msg.header
+            self.pub_mask.publish(mask_msg)
 
         # Find contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -197,9 +209,10 @@ class BallTrackerRGB(Node):
 
         self.pub_det.publish(dets)
 
-        dbg_msg = self.bridge.cv2_to_imgmsg(img, encoding='bgr8')
-        dbg_msg.header = img_msg.header
-        self.pub_dbg.publish(dbg_msg)
+        if self.publish_debug_image:
+            dbg_msg = self.bridge.cv2_to_imgmsg(img, encoding='bgr8')
+            dbg_msg.header = img_msg.header
+            self.pub_dbg.publish(dbg_msg)
 
 def main():
     rclpy.init()

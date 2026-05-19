@@ -9,13 +9,16 @@ ball_tracker_rgb:
     det_ball_topic: "/detections/ball"
     debug_image_topic: "/camera/image_debug"
     mask_image_topic: "/camera/image_mask"
+    publish_debug_image: false
+    publish_mask_image: false
 
 people_detector:
   ros__parameters:
     image_topic: "/camera/image_raw"
     camera_info_topic: "/camera/camera_info"
     ann_topic: /camera/annotations
-    people_debug_topic: /camera/people_debug
+    debug_image_topic: /camera/people_debug
+    publish_debug_image: false
     det_topic: "/detections/person"
     #model_path: "/ws/src/mecanumbot_camera/models/yolov8n.onnx"  # <— inside the container
     #model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/yolov8n.onnx"
@@ -28,7 +31,7 @@ people_detector:
     input_size: [416, 416]
     conf_threshold: 0.65
     iou_threshold: 0.45
-    infer_every_n: 3
+    infer_every_n: 4
     person_class_ids: [0]
 
 overlay_fused:

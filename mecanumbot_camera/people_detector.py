@@ -33,15 +33,19 @@ class PeopleDetectorTFLite(Node):
         self.declare_parameter("det_topic", "/detections/person")
         self.declare_parameter("conf_threshold", 0.65)
         self.declare_parameter("infer_every_n", 3)
+        self.declare_parameter("publish_debug_image", True)
+        self.declare_parameter("debug_image_topic", "/camera/people_debug")
 
         self.image_topic = self.get_parameter("image_topic").value
         self.det_topic = self.get_parameter("det_topic").value
         self.conf_thr = float(self.get_parameter("conf_threshold").value)
         self.infer_every_n = int(self.get_parameter("infer_every_n").value)
+        self.publish_debug_image = bool(self.get_parameter("publish_debug_image").value)
+        self.debug_image_topic = self.get_parameter("debug_image_topic").value
 
         # ---------------- Publisher ----------------
         self.pub_det = self.create_publisher(Detection2DArray, self.det_topic, 10)
-        self.pub_dbg = self.create_publisher(Image, "/camera/people_debug", 10)
+        self.pub_dbg = self.create_publisher(Image, self.debug_image_topic, 10)
 
         # ---------------- Subscriber ----------------
         self.create_subscription(Image, self.image_topic, self.on_image, qos_profile_sensor_data)
@@ -171,11 +175,11 @@ class PeopleDetectorTFLite(Node):
 
                 dets_msg.detections.append(det)
 
-                dbg = img.copy()
-                cv2.rectangle(dbg, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 2)
-
                 self.pub_det.publish(dets_msg)
-                self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))
+                if self.publish_debug_image:
+                    dbg = img.copy()
+                    cv2.rectangle(dbg, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                    self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))
                 return
             
             else:
@@ -184,7 +188,8 @@ class PeopleDetectorTFLite(Node):
                 self.hold_frames = 0
 
                 # debug: eredeti kép bbox nélkül
-                self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(img, "bgr8"))
+                if self.publish_debug_image:
+                    self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(img, "bgr8"))
                 self.pub_det.publish(dets_msg)
                 return
 
@@ -220,11 +225,11 @@ class PeopleDetectorTFLite(Node):
         dets_msg.detections.append(det)
 
         # debug image
-        dbg = img.copy()
-        cv2.rectangle(dbg, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-
         self.pub_det.publish(dets_msg)
-        self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))
+        if self.publish_debug_image:
+            dbg = img.copy()
+            cv2.rectangle(dbg, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+            self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))
 
     def download_model_if_needed(self):
         os.makedirs(MODEL_DIR, exist_ok=True)
