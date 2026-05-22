@@ -6,9 +6,10 @@ from vision_msgs.msg import Detection2DArray
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64
 try:
-    from mecanumbot_msgs.msg import AccessMotorCmd
+    from mecanumbot_msgs.msg import AccessMotorCmd, OpenCRState
 except ImportError:
     AccessMotorCmd = None
+    OpenCRState = None
 
 
 class BehaviorState:
@@ -70,6 +71,8 @@ class BehaviorManager(Node):
         self.declare_parameter("camera_tilt_topic", "/cmd_accessory_pos")
         self.declare_parameter("camera_tilt_ball_n_pos", 5.3)    # slight down
         self.declare_parameter("camera_tilt_owner_n_pos", 8.2)   # slight up
+        self.declare_parameter("camera_tilt_opencr_state_topic", "/opencr_state")
+        self.declare_parameter("camera_tilt_use_opencr_gripper_passthrough", True)
         self.declare_parameter("camera_tilt_gripper_hold_left", 5.12)
         self.declare_parameter("camera_tilt_gripper_hold_right", 5.12)
 
@@ -77,9 +80,15 @@ class BehaviorManager(Node):
         self.camera_tilt_topic = self.get_parameter("camera_tilt_topic").value
         self.camera_tilt_ball_n_pos = float(self.get_parameter("camera_tilt_ball_n_pos").value)
         self.camera_tilt_owner_n_pos = float(self.get_parameter("camera_tilt_owner_n_pos").value)
+        self.camera_tilt_opencr_state_topic = self.get_parameter("camera_tilt_opencr_state_topic").value
+        self.camera_tilt_use_opencr_gripper_passthrough = bool(
+            self.get_parameter("camera_tilt_use_opencr_gripper_passthrough").value
+        )
         self.camera_tilt_gripper_hold_left = float(self.get_parameter("camera_tilt_gripper_hold_left").value)
         self.camera_tilt_gripper_hold_right = float(self.get_parameter("camera_tilt_gripper_hold_right").value)
         self.last_camera_tilt_target = None
+        self.last_gripper_left = self.camera_tilt_gripper_hold_left
+        self.last_gripper_right = self.camera_tilt_gripper_hold_right
 
         # FIND_OWNER timing
         self.find_owner_enter_time = None
@@ -115,6 +124,21 @@ class BehaviorManager(Node):
                     f"ball_n_pos={self.camera_tilt_ball_n_pos:.2f}, "
                     f"owner_n_pos={self.camera_tilt_owner_n_pos:.2f}"
                 )
+                if self.camera_tilt_use_opencr_gripper_passthrough:
+                    if OpenCRState is None:
+                        self.get_logger().warn(
+                            "OpenCRState unavailable; using configured gripper hold fallback values for tilt messages."
+                        )
+                    else:
+                        self.create_subscription(
+                            OpenCRState,
+                            self.camera_tilt_opencr_state_topic,
+                            self.opencr_state_callback,
+                            10,
+                        )
+                        self.get_logger().info(
+                            f"Gripper passthrough enabled from {self.camera_tilt_opencr_state_topic}."
+                        )
 
         # QoS
         qos = QoSProfile(depth=10)
@@ -338,12 +362,16 @@ class BehaviorManager(Node):
 
         cmd = AccessMotorCmd()
         cmd.n_pos = float(target)
-        # Keep gripper commands neutral when publishing neck commands.
-        cmd.gl_pos = float(self.camera_tilt_gripper_hold_left)
-        cmd.gr_pos = float(self.camera_tilt_gripper_hold_right)
+        # AccessMotorCmd bundles neck + grippers, so keep gripper fields aligned with latest known values.
+        cmd.gl_pos = float(self.last_gripper_left)
+        cmd.gr_pos = float(self.last_gripper_right)
         self.accessory_pub.publish(cmd)
         self.last_camera_tilt_target = target
         self.get_logger().info(f"[CAM_TILT] n_pos={target:.2f} (state={self.state})")
+
+    def opencr_state_callback(self, msg):
+        self.last_gripper_left = float(msg.pos_gl) / 100.0
+        self.last_gripper_right = float(msg.pos_gr) / 100.0
 
     # ==========================================================
     def start_grasp(self, now: float):
