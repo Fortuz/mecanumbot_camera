@@ -200,12 +200,13 @@ class BallTrackerRGB(Node):
             d.results.append(hyp)
             dets.detections.append(d)
 
-            # Debug drawing
-            if self.use_enclosing_circle:
-                cv2.circle(img, (int(cx), int(cy)), int(max(w, h) // 2), (0, 255, 0), 2)
-            else:
-                cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.circle(img, (int(cx), int(cy)), 3, (0, 0, 255), -1)
+            # Debug drawing (skip entirely when debug publish is disabled)
+            if self.publish_debug_image:
+                if self.use_enclosing_circle:
+                    cv2.circle(img, (int(cx), int(cy)), int(max(w, h) // 2), (0, 255, 0), 2)
+                else:
+                    cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.circle(img, (int(cx), int(cy)), 3, (0, 0, 255), -1)
 
         self.pub_det.publish(dets)
 

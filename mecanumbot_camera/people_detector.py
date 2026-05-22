@@ -67,7 +67,11 @@ class PeopleDetectorTFLite(Node):
 
         # ---------------- Publisher ----------------
         self.pub_det = self.create_publisher(Detection2DArray, self.det_topic, 10)
-        self.pub_dbg = self.create_publisher(Image, self.debug_image_topic, 10)
+        self.pub_dbg = (
+            self.create_publisher(Image, self.debug_image_topic, 10)
+            if self.publish_debug_image
+            else None
+        )
 
         # ---------------- Subscriber ----------------
         self.create_subscription(Image, self.image_topic, self.on_image, qos_profile_sensor_data)
@@ -235,7 +239,7 @@ class PeopleDetectorTFLite(Node):
                 dets_msg.detections.append(det)
 
                 self.pub_det.publish(dets_msg)
-                if self.publish_debug_image:
+                if self.publish_debug_image and self.pub_dbg is not None:
                     dbg = img.copy()
                     cv2.rectangle(dbg, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
                     self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))
@@ -247,7 +251,7 @@ class PeopleDetectorTFLite(Node):
                 self.hold_frames = 0
 
                 # debug: eredeti kép bbox nélkül
-                if self.publish_debug_image:
+                if self.publish_debug_image and self.pub_dbg is not None:
                     self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(img, "bgr8"))
                 self.pub_det.publish(dets_msg)
                 return
@@ -285,7 +289,7 @@ class PeopleDetectorTFLite(Node):
 
         # debug image
         self.pub_det.publish(dets_msg)
-        if self.publish_debug_image:
+        if self.publish_debug_image and self.pub_dbg is not None:
             dbg = img.copy()
             cv2.rectangle(dbg, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
             self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))

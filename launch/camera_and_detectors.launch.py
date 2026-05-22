@@ -1,5 +1,8 @@
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch_ros.actions import Node
+from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.parameter_descriptions import ParameterFile
 from ament_index_python.packages import get_package_share_directory
@@ -14,7 +17,14 @@ def generate_launch_description():
         allow_substs=True
     )
 
+    enable_overlay = LaunchConfiguration('enable_overlay')
+
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'enable_overlay',
+            default_value='false',
+            description='Enable debug overlay_fused node publishing /camera/fused_debug'
+        ),
 
         # --------------------------------------------------
         # 1) PiCam → /camera/image_raw (video_publisher)
@@ -56,7 +66,8 @@ def generate_launch_description():
             executable='overlay_fused',
             name='overlay_fused',
             output='screen',
-            parameters=[params]
+            parameters=[params],
+            condition=IfCondition(enable_overlay)
         ),
 
         # --------------------------------------------------
