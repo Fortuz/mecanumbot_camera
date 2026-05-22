@@ -66,6 +66,7 @@ def generate_launch_description():
             package='mecanumbot_camera',
             executable='behavior_manager',
             name='behavior_manager',
-            output='screen'
+            output='screen',
+            parameters=[params]
         )
     ])

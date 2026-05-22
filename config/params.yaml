@@ -44,3 +44,14 @@ overlay_fused:
     person_det_topic: /detections/person
     ball_det_topic: /detections/ball
     out_topic: /camera/fused_debug
+
+behavior_manager:
+  ros__parameters:
+    enable_camera_tilt_control: true
+    camera_tilt_topic: /cmd_accessory_pos
+    # n_pos from Fortuz/mecanumbot accessory channel (approx range: 2.0..8.6)
+    camera_tilt_ball_n_pos: 5.3
+    camera_tilt_owner_n_pos: 8.2
+    # keep neutral gripper values when publishing neck tilt commands
+    camera_tilt_gripper_hold_left: 5.12
+    camera_tilt_gripper_hold_right: 5.12

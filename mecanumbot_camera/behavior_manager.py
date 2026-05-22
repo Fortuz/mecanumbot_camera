@@ -5,6 +5,10 @@ from geometry_msgs.msg import Twist
 from vision_msgs.msg import Detection2DArray
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64
+try:
+    from mecanumbot_msgs.msg import AccessMotorCmd
+except ImportError:
+    AccessMotorCmd = None
 
 
 class BehaviorState:
@@ -61,6 +65,22 @@ class BehaviorManager(Node):
         self.grasp_duration = 1.0
         self.grasp_start_time = None
 
+        # Camera tilt control (mecanumbot accessory channel)
+        self.declare_parameter("enable_camera_tilt_control", True)
+        self.declare_parameter("camera_tilt_topic", "/cmd_accessory_pos")
+        self.declare_parameter("camera_tilt_ball_n_pos", 5.3)    # slight down
+        self.declare_parameter("camera_tilt_owner_n_pos", 8.2)   # slight up
+        self.declare_parameter("camera_tilt_gripper_hold_left", 5.12)
+        self.declare_parameter("camera_tilt_gripper_hold_right", 5.12)
+
+        self.enable_camera_tilt_control = bool(self.get_parameter("enable_camera_tilt_control").value)
+        self.camera_tilt_topic = self.get_parameter("camera_tilt_topic").value
+        self.camera_tilt_ball_n_pos = float(self.get_parameter("camera_tilt_ball_n_pos").value)
+        self.camera_tilt_owner_n_pos = float(self.get_parameter("camera_tilt_owner_n_pos").value)
+        self.camera_tilt_gripper_hold_left = float(self.get_parameter("camera_tilt_gripper_hold_left").value)
+        self.camera_tilt_gripper_hold_right = float(self.get_parameter("camera_tilt_gripper_hold_right").value)
+        self.last_camera_tilt_target = None
+
         # FIND_OWNER timing
         self.find_owner_enter_time = None
         self.min_find_owner_time = 1.0  # s – ennyi ideig biztosan keressen
@@ -80,6 +100,21 @@ class BehaviorManager(Node):
         # Publishers
         self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
         self.gripper_pub = self.create_publisher(Float64, "/gripper_controller/commands", 10)
+        self.accessory_pub = None
+        if self.enable_camera_tilt_control:
+            if AccessMotorCmd is None:
+                self.get_logger().warn(
+                    "Camera tilt control requested, but mecanumbot_msgs/AccessMotorCmd is unavailable. "
+                    "Disabling camera tilt control."
+                )
+                self.enable_camera_tilt_control = False
+            else:
+                self.accessory_pub = self.create_publisher(AccessMotorCmd, self.camera_tilt_topic, 10)
+                self.get_logger().info(
+                    f"Camera tilt enabled on {self.camera_tilt_topic}: "
+                    f"ball_n_pos={self.camera_tilt_ball_n_pos:.2f}, "
+                    f"owner_n_pos={self.camera_tilt_owner_n_pos:.2f}"
+                )
 
         # QoS
         qos = QoSProfile(depth=10)
@@ -100,6 +135,7 @@ class BehaviorManager(Node):
         )
 
         self.get_logger().info("Behavior Manager initialized.")
+        self.update_camera_tilt_target()
 
         # Timer (10 Hz)
         self.control_timer = self.create_timer(0.1, self.control_loop)
@@ -285,7 +321,29 @@ class BehaviorManager(Node):
                 self.ball_stable_frames = 0
 
         # publish
+        self.update_camera_tilt_target()
         self.cmd_pub.publish(twist)
+
+    def update_camera_tilt_target(self):
+        if not self.enable_camera_tilt_control or self.accessory_pub is None:
+            return
+
+        if self.state in (BehaviorState.SEARCH, BehaviorState.TRACK_BALL, BehaviorState.FETCH, BehaviorState.GRASP):
+            target = self.camera_tilt_ball_n_pos
+        else:
+            target = self.camera_tilt_owner_n_pos
+
+        if self.last_camera_tilt_target is not None and abs(target - self.last_camera_tilt_target) < 1e-6:
+            return
+
+        cmd = AccessMotorCmd()
+        cmd.n_pos = float(target)
+        # Keep gripper commands neutral when publishing neck commands.
+        cmd.gl_pos = float(self.camera_tilt_gripper_hold_left)
+        cmd.gr_pos = float(self.camera_tilt_gripper_hold_right)
+        self.accessory_pub.publish(cmd)
+        self.last_camera_tilt_target = target
+        self.get_logger().info(f"[CAM_TILT] n_pos={target:.2f} (state={self.state})")
 
     # ==========================================================
     def start_grasp(self, now: float):
