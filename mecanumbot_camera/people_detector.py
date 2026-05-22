@@ -13,12 +13,16 @@ from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithP
 from cv_bridge import CvBridge
 
 from tflite_runtime.interpreter import Interpreter
+try:
+    from tflite_runtime.interpreter import load_delegate
+except ImportError:
+    load_delegate = None
 
 # Ebben a TFLite SSD modellben a "person" class id = 0
 PERSON_CLASS_ID = 0
 
 MODEL_URL = "https://storage.googleapis.com/download.tensorflow.org/models/tflite/coco_ssd_mobilenet_v1_1.0_quant_2018_06_29.zip"
-MODEL_DIR = "/home/pi/tflite_models"
+MODEL_DIR = os.path.join(os.path.expanduser("~"), "tflite_models")
 MODEL_FILE = f"{MODEL_DIR}/detect.tflite"
 
 
@@ -35,6 +39,19 @@ class PeopleDetectorTFLite(Node):
         self.declare_parameter("infer_every_n", 3)
         self.declare_parameter("publish_debug_image", True)
         self.declare_parameter("debug_image_topic", "/camera/people_debug")
+        self.declare_parameter("model_path", "")
+        self.declare_parameter("num_threads", 4)
+        self.declare_parameter("use_gpu_if_available", True)
+        self.declare_parameter("gpu_delegate_lib", "")
+        self.declare_parameter(
+            "gpu_delegate_candidates",
+            [
+                "libtensorflowlite_gpu_delegate.so",
+                "libtensorflowlite_gpu_delegate.so.2",
+                "/usr/lib/aarch64-linux-gnu/libtensorflowlite_gpu_delegate.so",
+                "/usr/local/lib/libtensorflowlite_gpu_delegate.so",
+            ],
+        )
 
         self.image_topic = self.get_parameter("image_topic").value
         self.det_topic = self.get_parameter("det_topic").value
@@ -42,6 +59,11 @@ class PeopleDetectorTFLite(Node):
         self.infer_every_n = int(self.get_parameter("infer_every_n").value)
         self.publish_debug_image = bool(self.get_parameter("publish_debug_image").value)
         self.debug_image_topic = self.get_parameter("debug_image_topic").value
+        self.model_path_param = self.get_parameter("model_path").value
+        self.num_threads = int(self.get_parameter("num_threads").value)
+        self.use_gpu_if_available = bool(self.get_parameter("use_gpu_if_available").value)
+        self.gpu_delegate_lib = self.get_parameter("gpu_delegate_lib").value
+        self.gpu_delegate_candidates = list(self.get_parameter("gpu_delegate_candidates").value)
 
         # ---------------- Publisher ----------------
         self.pub_det = self.create_publisher(Detection2DArray, self.det_topic, 10)
@@ -59,20 +81,16 @@ class PeopleDetectorTFLite(Node):
 
         # ---------------- Load TFLite model ----------------
         try:
-            model_path = self.download_model_if_needed()
+            model_path = self.resolve_model_path()
         except Exception as e:
             self.get_logger().error(f"Model download/load failed: {e}")
             self.interpreter = None
             return
 
         self.get_logger().info(f"Using model: {model_path}")
-
-        #self.interpreter = Interpreter(model_path=model_path)
-        self.interpreter = Interpreter(
-            model_path=model_path,
-            num_threads=4
-        )
-        self.interpreter.allocate_tensors()
+        self.interpreter = self.create_interpreter(model_path)
+        if self.interpreter is None:
+            return
 
         input_details = self.interpreter.get_input_details()
         output_details = self.interpreter.get_output_details()
@@ -89,6 +107,47 @@ class PeopleDetectorTFLite(Node):
         self.input_index = input_details[0]["index"]
         self.input_height = input_details[0]["shape"][1]
         self.input_width = input_details[0]["shape"][2]
+
+    def create_interpreter(self, model_path: str):
+        if self.use_gpu_if_available:
+            if load_delegate is None:
+                self.get_logger().warn("GPU delegate requested, but load_delegate is unavailable; falling back to CPU.")
+            else:
+                candidate_libs = []
+                if self.gpu_delegate_lib:
+                    candidate_libs.append(self.gpu_delegate_lib)
+                candidate_libs.extend([lib for lib in self.gpu_delegate_candidates if lib])
+
+                # Keep order while removing duplicates.
+                candidate_libs = list(dict.fromkeys(candidate_libs))
+
+                for delegate_lib in candidate_libs:
+                    try:
+                        delegate = load_delegate(delegate_lib)
+                        interpreter = Interpreter(
+                            model_path=model_path,
+                            num_threads=self.num_threads,
+                            experimental_delegates=[delegate],
+                        )
+                        interpreter.allocate_tensors()
+                        self.get_logger().info(f"Using TFLite GPU delegate: {delegate_lib}")
+                        return interpreter
+                    except Exception as e:
+                        self.get_logger().warn(
+                            f"GPU delegate load failed ({delegate_lib}): {e}. Trying next option."
+                        )
+
+                self.get_logger().warn("No working TFLite GPU delegate found; using CPU.")
+
+        try:
+            interpreter = Interpreter(model_path=model_path, num_threads=self.num_threads)
+            interpreter.allocate_tensors()
+            self.get_logger().info(f"Using CPU inference with num_threads={self.num_threads}.")
+            return interpreter
+        except Exception as e:
+            self.get_logger().error(f"CPU interpreter init failed: {e}")
+            self.interpreter = None
+            return None
 
     # ==========================================================
     def on_image(self, msg: Image):
@@ -230,6 +289,16 @@ class PeopleDetectorTFLite(Node):
             dbg = img.copy()
             cv2.rectangle(dbg, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
             self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(dbg, "bgr8"))
+
+    def resolve_model_path(self):
+        if self.model_path_param:
+            expanded = os.path.expanduser(self.model_path_param)
+            if os.path.exists(expanded):
+                return expanded
+            self.get_logger().warn(
+                f"Configured model_path does not exist: {expanded}. Falling back to auto-download."
+            )
+        return self.download_model_if_needed()
 
     def download_model_if_needed(self):
         os.makedirs(MODEL_DIR, exist_ok=True)

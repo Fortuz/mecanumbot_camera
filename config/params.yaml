@@ -27,12 +27,16 @@ people_detector:
     #model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/ssd_mobilenet_v1.tflite"
     #model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/mobilenet_ssd_v2_coco_quant_postprocess.tflite"
     #model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/yolov4-tiny-416.tflite"
-    model_path: "/home/pi/mecanum/src/mecanumbot_camera/models/ssd_mobilenet_v2_fpnlite_035_416_int8.tflite"
+    model_path: ""
     input_size: [416, 416]
     conf_threshold: 0.65
     iou_threshold: 0.45
     infer_every_n: 4
     person_class_ids: [0]
+    use_gpu_if_available: true
+    num_threads: 4
+    # Optional explicit delegate path (if empty, auto-tries common locations):
+    # gpu_delegate_lib: "/usr/lib/aarch64-linux-gnu/libtensorflowlite_gpu_delegate.so"
 
 overlay_fused:
   ros__parameters:
