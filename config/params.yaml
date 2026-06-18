@@ -48,7 +48,7 @@ overlay_fused:
 behavior_manager:
   ros__parameters:
     image_height: 480
-    fetch_enter_px: 120
+    fetch_enter_px: 200
     fetch_stop_px: 280
     search_speed: 0.125
     enable_camera_tilt_control: true
