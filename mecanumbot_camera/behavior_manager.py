@@ -12,6 +12,9 @@ except ImportError:
     AccessMotorCmd = None
     OpenCRState = None
 
+MECANUMBOT_MIN_GRIPPER_POS = 1.6
+MECANUMBOT_FRONT_GRIPPER_POS = 5.12
+MECANUMBOT_MAX_GRIPPER_POS = 8.54
 
 class BehaviorState:
     SEARCH = "SEARCH"
@@ -125,7 +128,7 @@ class BehaviorManager(Node):
 
         # Publishers
         self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
-        self.gripper_pub = self.create_publisher(Float64, "/cmd_accessory_pos", 10)
+        self.gripper_pub = self.create_publisher(AccessMotorCmd, "/cmd_accessory_pos", 10)
         self.accessory_pub = None
         if self.enable_camera_tilt_control:
             if AccessMotorCmd is None:
@@ -295,16 +298,26 @@ class BehaviorManager(Node):
     # GRIPPER HELPERS
     # ==========================================================
     def open_gripper(self):
-        msg = Float64()
-        msg.data = 1.0
+        msg = AccessMotorCmd()        
+        msg.n_pos = self.last_camera_tilt_target
+        # AccessMotorCmd bundles neck + grippers, so keep gripper fields aligned with latest known values.
+        msg.gl_pos = MECANUMBOT_FRONT_GRIPPER_POS
+        msg.gr_pos = MECANUMBOT_FRONT_GRIPPER_POS
         self.gripper_pub.publish(msg)
         self.get_logger().info("[GRIPPER] open (1.0)")
+        self.last_gripper_left = msg.pos_gl
+        self.last_gripper_right = msg.pos_gr
 
     def close_gripper(self):
-        msg = Float64()
-        msg.data = 0.0
+        msg = AccessMotorCmd()        
+        msg.n_pos = self.last_camera_tilt_target
+        # AccessMotorCmd bundles neck + grippers, so keep gripper fields aligned with latest known values.
+        msg.gl_pos = (MECANUMBOT_MIN_GRIPPER_POS + MECANUMBOT_FRONT_GRIPPER_POS)/2
+        msg.gr_pos = (MECANUMBOT_MAX_GRIPPER_POS + MECANUMBOT_FRONT_GRIPPER_POS)/2
         self.gripper_pub.publish(msg)
         self.get_logger().info("[GRIPPER] close (0.0)")
+        self.last_gripper_left = msg.pos_gl
+        self.last_gripper_right = msg.pos_gr
 
     # ==========================================================
     # CONTROL LOOP — MAIN FSM
