@@ -10,7 +10,7 @@ Step-by-step instructions for bringing up `mecanumbot_camera` on Raspberry Pi ha
 
 - **Pi 5**: Raspberry Pi OS 64-bit with PiCamera (CSI) module.
 - **Pi 3**: Ubuntu 22.04 with USB camera or external Pi camera node (Ubuntu images lack libcamera support).
-- Optional mecanum-drive robot base exposing `/cmd_vel` and `/gripper_controller/commands`.
+- Optional mecanum-drive robot base exposing `/cmd_vel` and `/cmd_accessory_pos`.
 
 ### Software
 
@@ -147,7 +147,7 @@ Add `/camera/image_debug`, `/camera/people_debug`, or `/camera/fused_debug` to c
 | `/camera/image_raw` missing | Ensure PiCamReader has access to the CSI camera. On Pi 3 + Ubuntu, use a USB camera or external driver. |
 | No `/detections/ball` | Tune HSV thresholds (`ros2 param set /ball_tracker_rgb hsv_lower "[H,S,V]"`), adjust lighting, verify mask on `/camera/image_mask`. |
 | No `/detections/person` | Confirm `tflite-runtime` installed, check network connectivity for first model download, raise `infer_every_n` to reduce CPU load. |
-| Behavior manager not moving robot | Confirm `/cmd_vel` and `/gripper_controller/commands` are connected to the base/gripper drivers. Use `ros2 topic echo` to inspect. |
+| Behavior manager not moving robot | Confirm `/cmd_vel` and `/cmd_accessory_pos` are connected to the base/gripper drivers. Use `ros2 topic echo` to inspect. |
 | Docker X11 issues on Windows | Ensure VcXsrv/x410 runs, set `DISPLAY=host.docker.internal:0.0`, allow public access in the X server settings. |
 
 ---

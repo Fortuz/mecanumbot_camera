@@ -120,7 +120,7 @@ flowchart LR
     detPerson -->|/detections/person| behavior
 
     behavior -->|/cmd_vel| cmd
-    behavior -->|/gripper_controller/commands| grip
+    behavior -->|/cmd_accessory_pos| grip
 
 ```
 
@@ -191,7 +191,7 @@ behavior_manager
   <- /detections/ball
   <- /detections/person
   -> /cmd_vel                      (geometry_msgs/Twist)
-  -> /gripper_controller/commands  (std_msgs/Float64)
+  -> /cmd_accessory_pos  (std_msgs/Float64)
 
 Standard ROS infrastructure topics (`/tf`, `/tf_static`, `/rosout`, `/parameter_events`,
 `/clicked_point`, `/initialpose`, `/goal_pose`) are present when running inside a full ROS system.
@@ -233,7 +233,7 @@ Fuses `/camera/image_raw`, `/detections/ball`, and `/detections/person` into `/c
 Finite state machine that controls robot locomotion and gripper behavior.
 
 - **Inputs:** `/detections/ball`, `/detections/person`.
-- **Outputs:** `/cmd_vel`, `/gripper_controller/commands`.
+- **Outputs:** `/cmd_vel`, `/cmd_accessory_pos`.
 - **States:** `SEARCH`, `TRACK_BALL`, `FETCH`, `GRASP`, `FIND_OWNER`, `DELIVER`, and idle/waiting transitions.
 - **Important parameters:** `image_width=640`, `fetch_enter_px=200`, `fetch_stop_px=280`,
   `REQUIRED_BALL_STABLE=3`, `REQUIRED_PERSON_STABLE=3`, `ball_lost_timeout=1.0`,
