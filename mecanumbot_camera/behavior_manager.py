@@ -92,7 +92,7 @@ class BehaviorManager(Node):
         # Camera tilt control (mecanumbot accessory channel)
         self.declare_parameter("enable_camera_tilt_control", True)
         self.declare_parameter("camera_tilt_topic", "/cmd_accessory_pos")
-        self.declare_parameter("camera_tilt_ball_n_pos", 5.3)    # slight down
+        self.declare_parameter("camera_tilt_ball_n_pos", 7.2)    # forward, slightly down
         self.declare_parameter("camera_tilt_owner_n_pos", 8.2)   # slight up
         self.declare_parameter("camera_tilt_opencr_state_topic", "/opencr_state")
         self.declare_parameter("camera_tilt_use_opencr_gripper_passthrough", True)
