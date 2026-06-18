@@ -13,6 +13,11 @@ def generate_launch_description():
         allow_substs=True
     )
 
+    prod_overrides = {
+        'publish_debug_image': False,
+        'publish_mask_image': False,
+    }
+
     return LaunchDescription([
         # External camera node is expected to publish /camera/image_raw.
         Node(
@@ -20,14 +25,14 @@ def generate_launch_description():
             executable='ball_tracker_rgb',
             name='ball_tracker_rgb',
             output='screen',
-            parameters=[params]
+            parameters=[params, prod_overrides]
         ),
         Node(
             package='mecanumbot_camera',
             executable='people_detector',
             name='people_detector',
             output='screen',
-            parameters=[params]
+            parameters=[params, {'publish_debug_image': False}]
         ),
         Node(
             package='mecanumbot_camera',

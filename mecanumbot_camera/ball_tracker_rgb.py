@@ -68,8 +68,18 @@ class BallTrackerRGB(Node):
         self.create_subscription(CameraInfo, info_topic, self.on_info, 10)
         self.create_subscription(Image, self.image_topic, self.on_image, qos_profile_sensor_data)
         self.pub_det  = self.create_publisher(Detection2DArray, det_topic, 10)
-        self.pub_dbg = self.create_publisher(Image, dbg_topic, 10)
-        self.pub_mask = self.create_publisher(Image, mask_topic, 10)
+        self.debug_image_topic = dbg_topic
+        self.mask_image_topic = mask_topic
+        self.pub_dbg = (
+            self.create_publisher(Image, self.debug_image_topic, 10)
+            if self.publish_debug_image
+            else None
+        )
+        self.pub_mask = (
+            self.create_publisher(Image, self.mask_image_topic, 10)
+            if self.publish_mask_image
+            else None
+        )
 
         # React to live param changes (ros2 param set ...)
         self.add_on_set_parameters_callback(self._on_param_change)
@@ -109,8 +119,12 @@ class BallTrackerRGB(Node):
                     self.use_enclosing_circle = bool(p.value)
                 elif p.name == 'publish_debug_image':
                     self.publish_debug_image = bool(p.value)
+                    if self.publish_debug_image and self.pub_dbg is None:
+                        self.pub_dbg = self.create_publisher(Image, self.debug_image_topic, 10)
                 elif p.name == 'publish_mask_image':
                     self.publish_mask_image = bool(p.value)
+                    if self.publish_mask_image and self.pub_mask is None:
+                        self.pub_mask = self.create_publisher(Image, self.mask_image_topic, 10)
             return SetParametersResult(successful=True)
         except Exception as e:
             self.get_logger().error(f'Param update error: {e}')
@@ -138,7 +152,7 @@ class BallTrackerRGB(Node):
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=iters)
 
         # Publish binary mask (for Foxglove tuning)
-        if self.publish_mask_image:
+        if self.publish_mask_image and self.pub_mask is not None:
             mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
             mask_msg.header = img_msg.header
             self.pub_mask.publish(mask_msg)
@@ -210,7 +224,7 @@ class BallTrackerRGB(Node):
 
         self.pub_det.publish(dets)
 
-        if self.publish_debug_image:
+        if self.publish_debug_image and self.pub_dbg is not None:
             dbg_msg = self.bridge.cv2_to_imgmsg(img, encoding='bgr8')
             dbg_msg.header = img_msg.header
             self.pub_dbg.publish(dbg_msg)
