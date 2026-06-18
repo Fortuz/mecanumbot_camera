@@ -157,8 +157,14 @@ class BallTrackerRGB(Node):
             mask_msg.header = img_msg.header
             self.pub_mask.publish(mask_msg)
 
+        nonzero_mask_px = cv2.countNonZero(mask)
+
         # Find contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        self.get_logger().info(
+            f'mask_nonzero_px={nonzero_mask_px}, contours={len(contours)}',
+            throttle_duration_sec=1.0,
+        )
 
         dets = Detection2DArray()
         dets.header = img_msg.header
