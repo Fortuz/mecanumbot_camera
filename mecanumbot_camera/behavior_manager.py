@@ -274,6 +274,7 @@ class BehaviorManager(Node):
     # ==========================================================
     def ball_callback(self, msg: Detection2DArray):
         if not msg.detections:
+            self.get_logger().info("[ball_callback] no detections")
             return
 
         det = max(msg.detections, key=lambda d: d.bbox.size_x)
@@ -328,6 +329,8 @@ class BehaviorManager(Node):
     # CONTROL LOOP — MAIN FSM
     # ==========================================================
     def control_loop(self):
+        self.get_logger().info("[control_loop]")
+
         now = self.now()
 
         ball_seen = (now - self.last_ball_time) < self.ball_lost_timeout
