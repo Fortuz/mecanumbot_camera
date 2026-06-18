@@ -53,6 +53,11 @@ behavior_manager:
     # n_pos from Fortuz/mecanumbot accessory channel (approx range: 2.0..8.6)
     camera_tilt_ball_n_pos: 7.2
     camera_tilt_owner_n_pos: 8.2
+    camera_tilt_search_sweep_enabled: true
+    camera_tilt_search_min_n_pos: 6.8
+    camera_tilt_search_max_n_pos: 7.8
+    camera_tilt_search_sweep_period: 6.0
+    camera_tilt_publish_min_delta: 0.03
     # Accessory msg contains neck+gripper together; passthrough tracks current gripper from OpenCR state.
     camera_tilt_opencr_state_topic: /opencr_state
     camera_tilt_use_opencr_gripper_passthrough: true

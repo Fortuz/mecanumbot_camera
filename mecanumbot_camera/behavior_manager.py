@@ -94,6 +94,11 @@ class BehaviorManager(Node):
         self.declare_parameter("camera_tilt_topic", "/cmd_accessory_pos")
         self.declare_parameter("camera_tilt_ball_n_pos", 7.2)    # forward, slightly down
         self.declare_parameter("camera_tilt_owner_n_pos", 8.2)   # slight up
+        self.declare_parameter("camera_tilt_search_sweep_enabled", True)
+        self.declare_parameter("camera_tilt_search_min_n_pos", 6.8)
+        self.declare_parameter("camera_tilt_search_max_n_pos", 7.8)
+        self.declare_parameter("camera_tilt_search_sweep_period", 6.0)
+        self.declare_parameter("camera_tilt_publish_min_delta", 0.03)
         self.declare_parameter("camera_tilt_opencr_state_topic", "/opencr_state")
         self.declare_parameter("camera_tilt_use_opencr_gripper_passthrough", True)
         self.declare_parameter("camera_tilt_gripper_hold_left", 5.12)
@@ -103,6 +108,13 @@ class BehaviorManager(Node):
         self.camera_tilt_topic = self.get_parameter("camera_tilt_topic").value
         self.camera_tilt_ball_n_pos = float(self.get_parameter("camera_tilt_ball_n_pos").value)
         self.camera_tilt_owner_n_pos = float(self.get_parameter("camera_tilt_owner_n_pos").value)
+        self.camera_tilt_search_sweep_enabled = bool(
+            self.get_parameter("camera_tilt_search_sweep_enabled").value
+        )
+        self.camera_tilt_search_min_n_pos = float(self.get_parameter("camera_tilt_search_min_n_pos").value)
+        self.camera_tilt_search_max_n_pos = float(self.get_parameter("camera_tilt_search_max_n_pos").value)
+        self.camera_tilt_search_sweep_period = float(self.get_parameter("camera_tilt_search_sweep_period").value)
+        self.camera_tilt_publish_min_delta = float(self.get_parameter("camera_tilt_publish_min_delta").value)
         self.camera_tilt_opencr_state_topic = self.get_parameter("camera_tilt_opencr_state_topic").value
         self.camera_tilt_use_opencr_gripper_passthrough = bool(
             self.get_parameter("camera_tilt_use_opencr_gripper_passthrough").value
@@ -143,7 +155,9 @@ class BehaviorManager(Node):
                 self.get_logger().info(
                     f"Camera tilt enabled on {self.camera_tilt_topic}: "
                     f"ball_n_pos={self.camera_tilt_ball_n_pos:.2f}, "
-                    f"owner_n_pos={self.camera_tilt_owner_n_pos:.2f}"
+                    f"owner_n_pos={self.camera_tilt_owner_n_pos:.2f}, "
+                    f"search_sweep={self.camera_tilt_search_sweep_enabled} "
+                    f"[{self.camera_tilt_search_min_n_pos:.2f}, {self.camera_tilt_search_max_n_pos:.2f}]"
                 )
                 if self.camera_tilt_use_opencr_gripper_passthrough:
                     if OpenCRState is None:
@@ -462,22 +476,36 @@ class BehaviorManager(Node):
                 self.waiting_for_new_ball = True
                 self.ball_stable_frames = 0
 
+        self.update_camera_tilt_target(now)
+
         # publish
         if self.twist != twist:
             self.twist = twist
-            self.update_camera_tilt_target()
             self.cmd_pub.publish(twist)
 
-    def update_camera_tilt_target(self):
+    def compute_search_tilt_target(self, now: float) -> float:
+        min_pos = min(self.camera_tilt_search_min_n_pos, self.camera_tilt_search_max_n_pos)
+        max_pos = max(self.camera_tilt_search_min_n_pos, self.camera_tilt_search_max_n_pos)
+        period = max(self.camera_tilt_search_sweep_period, 0.1)
+        phase = (now % period) / period
+        ratio = phase * 2.0 if phase < 0.5 else (1.0 - phase) * 2.0
+        return min_pos + (max_pos - min_pos) * ratio
+
+    def update_camera_tilt_target(self, now: float = None):
         if not self.enable_camera_tilt_control or self.accessory_pub is None:
             return
 
-        if self.state in (BehaviorState.SEARCH, BehaviorState.TRACK_BALL, BehaviorState.FETCH, BehaviorState.GRASP):
+        if self.state == BehaviorState.SEARCH and self.camera_tilt_search_sweep_enabled:
+            if now is None:
+                now = self.now()
+            target = self.compute_search_tilt_target(now)
+        elif self.state in (BehaviorState.SEARCH, BehaviorState.TRACK_BALL, BehaviorState.FETCH, BehaviorState.GRASP):
             target = self.camera_tilt_ball_n_pos
         else:
             target = self.camera_tilt_owner_n_pos
 
-        if self.last_camera_tilt_target is not None and abs(target - self.last_camera_tilt_target) < 1e-6:
+        if self.last_camera_tilt_target is not None and \
+                abs(target - self.last_camera_tilt_target) < self.camera_tilt_publish_min_delta:
             return
 
         cmd = AccessMotorCmd()
