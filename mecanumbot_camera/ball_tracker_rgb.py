@@ -164,6 +164,8 @@ class BallTrackerRGB(Node):
         dets.header = img_msg.header
 
         for c in contours:
+            self.get_logger().info(f'len(c): {len(c)}')            
+            
             area = float(cv2.contourArea(c))
             if area < float(self.min_area):
                 continue
@@ -200,6 +202,7 @@ class BallTrackerRGB(Node):
                 d.bbox.center.y = float(cy)
                 d.bbox.center.theta = 0.0
             except AttributeError:
+                self.get_logger().info(f'AttributeError: {float(cx), float(cy)}')            
                 # Fallback for center.position.{x,y}
                 d.bbox.center.position.x = float(cx)
                 d.bbox.center.position.y = float(cy)
