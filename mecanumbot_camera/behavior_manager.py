@@ -102,9 +102,9 @@ class BehaviorManager(Node):
         self.declare_parameter("camera_tilt_search_max_n_pos", 7.8)
         self.declare_parameter("camera_tilt_search_sweep_period", 6.0)
         self.declare_parameter("camera_tilt_publish_min_delta", 0.03)
-        self.declare_parameter("camera_tilt_track_min_n_pos", 6.6)
+        self.declare_parameter("camera_tilt_track_min_n_pos", 6.0)
         self.declare_parameter("camera_tilt_track_max_n_pos", 8.1)
-        self.declare_parameter("camera_tilt_track_kp", 0.003)
+        self.declare_parameter("camera_tilt_track_kp", 0.005)
         self.declare_parameter("camera_tilt_track_deadband_px", 24.0)
         self.declare_parameter("camera_tilt_opencr_state_topic", "/opencr_state")
         self.declare_parameter("camera_tilt_use_opencr_gripper_passthrough", True)
@@ -528,7 +528,7 @@ class BehaviorManager(Node):
             if now is None:
                 now = self.now()
             target = self.compute_search_tilt_target(now)
-        elif self.state == BehaviorState.TRACK_BALL:
+        elif self.state in (BehaviorState.TRACK_BALL, BehaviorState.FETCH):
             target = self.compute_track_ball_tilt_target()
         elif self.state in (BehaviorState.SEARCH, BehaviorState.TRACK_BALL, BehaviorState.FETCH, BehaviorState.GRASP):
             target = self.camera_tilt_ball_n_pos

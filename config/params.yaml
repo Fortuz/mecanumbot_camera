@@ -61,9 +61,9 @@ behavior_manager:
     camera_tilt_search_max_n_pos: 7.8
     camera_tilt_search_sweep_period: 6.0
     camera_tilt_publish_min_delta: 0.03
-    camera_tilt_track_min_n_pos: 6.6
+    camera_tilt_track_min_n_pos: 6.0
     camera_tilt_track_max_n_pos: 8.1
-    camera_tilt_track_kp: 0.003
+    camera_tilt_track_kp: 0.005
     camera_tilt_track_deadband_px: 24.0
     # Accessory msg contains neck+gripper together; passthrough tracks current gripper from OpenCR state.
     camera_tilt_opencr_state_topic: /opencr_state
