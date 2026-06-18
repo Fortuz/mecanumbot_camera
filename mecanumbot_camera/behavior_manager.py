@@ -68,6 +68,8 @@ class BehaviorManager(Node):
         self.declare_parameters("", list(self.BEHAVIOR_PARAMETER_DEFAULTS.items()))
         self._load_behavior_parameters()
 
+        self.twist = None
+
         # Ball state
         self.last_ball_time = -1e9
         self.ball_center_x = None
@@ -440,8 +442,10 @@ class BehaviorManager(Node):
                 self.ball_stable_frames = 0
 
         # publish
-        self.update_camera_tilt_target()
-        self.cmd_pub.publish(twist)
+        if self.twist != twist:
+            self.twist = twist
+            self.update_camera_tilt_target()
+            self.cmd_pub.publish(twist)
 
     def update_camera_tilt_target(self):
         if not self.enable_camera_tilt_control or self.accessory_pub is None:
