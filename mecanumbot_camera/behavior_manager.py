@@ -38,7 +38,7 @@ class BehaviorManager(Node):
         "Kp_fwd": 0.015,
         "max_ang": 0.8,
         "max_lin": 0.30,
-        "search_speed": 0.25,
+        "search_speed": 0.125,
         "owner_threshold_px": 150,
         "grasp_duration": 1.0,
         "min_find_owner_time": 1.0,
