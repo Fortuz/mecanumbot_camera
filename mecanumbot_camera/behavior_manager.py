@@ -5,6 +5,7 @@ from geometry_msgs.msg import Twist
 from vision_msgs.msg import Detection2DArray
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64
+from rcl_interfaces.msg import SetParametersResult
 try:
     from mecanumbot_msgs.msg import AccessMotorCmd, OpenCRState
 except ImportError:
@@ -22,33 +23,50 @@ class BehaviorState:
 
 
 class BehaviorManager(Node):
+    BEHAVIOR_PARAMETER_DEFAULTS = {
+        "image_width": 640,
+        "fetch_enter_px": 200,
+        "fetch_stop_px": 280,
+        "REQUIRED_BALL_STABLE": 3,
+        "REQUIRED_PERSON_STABLE": 3,
+        "ball_lost_timeout": 1.0,
+        "person_lost_timeout": 1.0,
+        "Kp_rot": 0.0025,
+        "Kp_fwd": 0.015,
+        "max_ang": 0.8,
+        "max_lin": 0.30,
+        "search_speed": 0.25,
+        "owner_threshold_px": 150,
+        "grasp_duration": 1.0,
+        "min_find_owner_time": 1.0,
+        "new_ball_absent_time": 2.0,
+    }
+    INTEGER_BEHAVIOR_PARAMETERS = {
+        "image_width",
+        "fetch_enter_px",
+        "fetch_stop_px",
+        "REQUIRED_BALL_STABLE",
+        "REQUIRED_PERSON_STABLE",
+        "owner_threshold_px",
+    }
+    NONNEGATIVE_BEHAVIOR_PARAMETERS = {
+        "ball_lost_timeout",
+        "person_lost_timeout",
+        "grasp_duration",
+        "min_find_owner_time",
+        "new_ball_absent_time",
+        "Kp_rot",
+        "Kp_fwd",
+        "max_ang",
+        "max_lin",
+    }
+
     def __init__(self):
         super().__init__("behavior_manager")
 
-        # ------- PARAMETERS -------
-        self.image_width = 640
-
-        # Ball thresholds — hysteresis
-        self.fetch_enter_px = 200   # TRACK → FETCH
-        self.fetch_stop_px = 280    # FETCH → GRASP
-
-        # Stability requirements
-        self.REQUIRED_BALL_STABLE = 3
-        self.REQUIRED_PERSON_STABLE = 3
-
-        # Timeouts
-        self.ball_lost_timeout = 1.0
-        self.person_lost_timeout = 1.0
-
-        # Control gains
-        self.Kp_rot = 0.0025
-        self.Kp_fwd = 0.015
-        self.max_ang = 0.8
-        self.max_lin = 0.30
-        self.search_speed = 0.25
-
-        # Person thresholds
-        self.owner_threshold_px = 150
+        # ------- BEHAVIOR PARAMETERS -------
+        self.declare_parameters("", list(self.BEHAVIOR_PARAMETER_DEFAULTS.items()))
+        self._load_behavior_parameters()
 
         # Ball state
         self.last_ball_time = -1e9
@@ -63,7 +81,6 @@ class BehaviorManager(Node):
         self.person_stable_frames = 0
 
         # Grasp state
-        self.grasp_duration = 1.0
         self.grasp_start_time = None
 
         # Camera tilt control (mecanumbot accessory channel)
@@ -92,7 +109,6 @@ class BehaviorManager(Node):
 
         # FIND_OWNER timing
         self.find_owner_enter_time = None
-        self.min_find_owner_time = 1.0  # s – ennyi ideig biztosan keressen
 
         # Deliver state helper
         self.deliver_open_done = False
@@ -100,7 +116,6 @@ class BehaviorManager(Node):
 
         # Új labda várása delivery után
         self.waiting_for_new_ball = False
-        self.new_ball_absent_time = 2.0  # ennyi ideig ne lásson labdát, hogy új játék indulhasson
         self.last_delivery_time = None
 
         # FSM
@@ -160,9 +175,89 @@ class BehaviorManager(Node):
 
         self.get_logger().info("Behavior Manager initialized.")
         self.update_camera_tilt_target()
+        self.add_on_set_parameters_callback(self._on_behavior_param_change)
 
         # Timer (10 Hz)
         self.control_timer = self.create_timer(0.1, self.control_loop)
+
+    # ==========================================================
+    def _load_behavior_parameters(self):
+        values = {}
+        for name in self.BEHAVIOR_PARAMETER_DEFAULTS:
+            value = self.get_parameter(name).value
+            converted, reason = self._coerce_behavior_parameter(name, value)
+            if reason:
+                raise ValueError(reason)
+            values[name] = converted
+
+        reason = self._validate_behavior_parameters(values)
+        if reason:
+            raise ValueError(reason)
+
+        for name, value in values.items():
+            setattr(self, name, value)
+
+    def _coerce_behavior_parameter(self, name, value):
+        if name in self.INTEGER_BEHAVIOR_PARAMETERS:
+            if isinstance(value, bool) or not isinstance(value, int):
+                return None, f"{name} must be an integer"
+            return int(value), None
+
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None, f"{name} must be numeric"
+        return float(value), None
+
+    def _validate_behavior_parameters(self, values):
+        if values["image_width"] <= 0:
+            return "image_width must be > 0"
+        if values["fetch_enter_px"] <= 0:
+            return "fetch_enter_px must be > 0"
+        if values["fetch_stop_px"] <= 0:
+            return "fetch_stop_px must be > 0"
+        if values["fetch_enter_px"] >= values["fetch_stop_px"]:
+            return "fetch_enter_px must be < fetch_stop_px"
+        if values["owner_threshold_px"] <= 0:
+            return "owner_threshold_px must be > 0"
+
+        for name in ("REQUIRED_BALL_STABLE", "REQUIRED_PERSON_STABLE"):
+            if values[name] < 1:
+                return f"{name} must be an integer >= 1"
+
+        for name in self.NONNEGATIVE_BEHAVIOR_PARAMETERS:
+            if values[name] < 0:
+                return f"{name} must be >= 0"
+
+        return None
+
+    def _on_behavior_param_change(self, params):
+        values = {
+            name: getattr(self, name)
+            for name in self.BEHAVIOR_PARAMETER_DEFAULTS
+        }
+        changes = {}
+
+        for param in params:
+            if param.name not in self.BEHAVIOR_PARAMETER_DEFAULTS:
+                continue
+
+            converted, reason = self._coerce_behavior_parameter(param.name, param.value)
+            if reason:
+                return SetParametersResult(successful=False, reason=reason)
+
+            values[param.name] = converted
+            changes[param.name] = converted
+
+        reason = self._validate_behavior_parameters(values)
+        if reason:
+            return SetParametersResult(successful=False, reason=reason)
+
+        for name, value in changes.items():
+            old_value = getattr(self, name)
+            setattr(self, name, value)
+            if old_value != value:
+                self.get_logger().info(f"[PARAM] {name} changed: {old_value} -> {value}")
+
+        return SetParametersResult(successful=True)
 
     # ==========================================================
     def now(self):

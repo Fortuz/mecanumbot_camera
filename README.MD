@@ -257,6 +257,17 @@ Finite state machine that controls robot locomotion and gripper behavior.
 | `search_speed` | Angular velocity while scanning | Controls how fast the robot spins in SEARCH. |
 | `owner_threshold_px` | Person bbox width required for delivery | Sets the standoff distance to the owner. |
 
+Most behavior tuning values are ROS 2 parameters and can be changed while the node is running:
+
+```bash
+ros2 param list /behavior_manager
+ros2 param get /behavior_manager fetch_enter_px
+ros2 param get /behavior_manager fetch_stop_px
+ros2 param set /behavior_manager fetch_enter_px 150
+ros2 param set /behavior_manager fetch_stop_px 200
+ros2 param set /behavior_manager max_lin 0.15
+```
+
 ### Behavior Manager State Machine
 
 The robot's behavior is controlled by a six-state FSM:
@@ -338,7 +349,7 @@ Currently the YAML file provides:
 - `people_detector`: image topic, debug topic, detection topic, TFLite path, and inference settings.
 - `overlay_fused`: input topics and fused output topic.
 
-Additional `ball_tracker_rgb` knobs (median blur, morphology, circularity, etc.) are declared in the node itself and can be changed via `ros2 param set` or by editing the defaults in `ball_tracker_rgb.py`. `behavior_manager` parameters are hard-coded inside `behavior_manager.py`; exposing them via YAML would require code changes.
+Additional `ball_tracker_rgb` knobs (median blur, morphology, circularity, etc.) are declared in the node itself and can be changed via `ros2 param set` or by editing the defaults in `ball_tracker_rgb.py`. `behavior_manager` tuning values are also declared as ROS 2 parameters, so they can be changed live with `ros2 param set /behavior_manager <name> <value>`.
 
 ---
 
