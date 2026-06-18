@@ -28,6 +28,7 @@ class BehaviorState:
 class BehaviorManager(Node):
     BEHAVIOR_PARAMETER_DEFAULTS = {
         "image_width": 640,
+        "image_height": 480,
         "fetch_enter_px": 200,
         "fetch_stop_px": 280,
         "REQUIRED_BALL_STABLE": 3,
@@ -46,6 +47,7 @@ class BehaviorManager(Node):
     }
     INTEGER_BEHAVIOR_PARAMETERS = {
         "image_width",
+        "image_height",
         "fetch_enter_px",
         "fetch_stop_px",
         "REQUIRED_BALL_STABLE",
@@ -76,6 +78,7 @@ class BehaviorManager(Node):
         # Ball state
         self.last_ball_time = -1e9
         self.ball_center_x = None
+        self.ball_center_y = None
         self.ball_width_px = 0.0
         self.ball_height_px = 0.0
         self.ball_stable_frames = 0
@@ -99,6 +102,10 @@ class BehaviorManager(Node):
         self.declare_parameter("camera_tilt_search_max_n_pos", 7.8)
         self.declare_parameter("camera_tilt_search_sweep_period", 6.0)
         self.declare_parameter("camera_tilt_publish_min_delta", 0.03)
+        self.declare_parameter("camera_tilt_track_min_n_pos", 6.6)
+        self.declare_parameter("camera_tilt_track_max_n_pos", 8.1)
+        self.declare_parameter("camera_tilt_track_kp", 0.003)
+        self.declare_parameter("camera_tilt_track_deadband_px", 24.0)
         self.declare_parameter("camera_tilt_opencr_state_topic", "/opencr_state")
         self.declare_parameter("camera_tilt_use_opencr_gripper_passthrough", True)
         self.declare_parameter("camera_tilt_gripper_hold_left", 5.12)
@@ -115,6 +122,10 @@ class BehaviorManager(Node):
         self.camera_tilt_search_max_n_pos = float(self.get_parameter("camera_tilt_search_max_n_pos").value)
         self.camera_tilt_search_sweep_period = float(self.get_parameter("camera_tilt_search_sweep_period").value)
         self.camera_tilt_publish_min_delta = float(self.get_parameter("camera_tilt_publish_min_delta").value)
+        self.camera_tilt_track_min_n_pos = float(self.get_parameter("camera_tilt_track_min_n_pos").value)
+        self.camera_tilt_track_max_n_pos = float(self.get_parameter("camera_tilt_track_max_n_pos").value)
+        self.camera_tilt_track_kp = float(self.get_parameter("camera_tilt_track_kp").value)
+        self.camera_tilt_track_deadband_px = float(self.get_parameter("camera_tilt_track_deadband_px").value)
         self.camera_tilt_opencr_state_topic = self.get_parameter("camera_tilt_opencr_state_topic").value
         self.camera_tilt_use_opencr_gripper_passthrough = bool(
             self.get_parameter("camera_tilt_use_opencr_gripper_passthrough").value
@@ -157,7 +168,8 @@ class BehaviorManager(Node):
                     f"ball_n_pos={self.camera_tilt_ball_n_pos:.2f}, "
                     f"owner_n_pos={self.camera_tilt_owner_n_pos:.2f}, "
                     f"search_sweep={self.camera_tilt_search_sweep_enabled} "
-                    f"[{self.camera_tilt_search_min_n_pos:.2f}, {self.camera_tilt_search_max_n_pos:.2f}]"
+                    f"[{self.camera_tilt_search_min_n_pos:.2f}, {self.camera_tilt_search_max_n_pos:.2f}], "
+                    f"track_range=[{self.camera_tilt_track_min_n_pos:.2f}, {self.camera_tilt_track_max_n_pos:.2f}]"
                 )
                 if self.camera_tilt_use_opencr_gripper_passthrough:
                     if OpenCRState is None:
@@ -230,6 +242,8 @@ class BehaviorManager(Node):
     def _validate_behavior_parameters(self, values):
         if values["image_width"] <= 0:
             return "image_width must be > 0"
+        if values["image_height"] <= 0:
+            return "image_height must be > 0"
         if values["fetch_enter_px"] <= 0:
             return "fetch_enter_px must be > 0"
         if values["fetch_stop_px"] <= 0:
@@ -293,6 +307,7 @@ class BehaviorManager(Node):
 
         det = max(msg.detections, key=lambda d: d.bbox.size_x)
         self.ball_center_x = det.bbox.center.position.x
+        self.ball_center_y = det.bbox.center.position.y
         self.ball_width_px = det.bbox.size_x
         self.ball_height_px = det.bbox.size_y
         self.last_ball_time = self.now()
@@ -491,6 +506,20 @@ class BehaviorManager(Node):
         ratio = phase * 2.0 if phase < 0.5 else (1.0 - phase) * 2.0
         return min_pos + (max_pos - min_pos) * ratio
 
+    def compute_track_ball_tilt_target(self) -> float:
+        if self.ball_center_y is None:
+            return self.camera_tilt_ball_n_pos
+
+        image_center_y = self.image_height / 2.0
+        err_y = self.ball_center_y - image_center_y
+        if abs(err_y) < self.camera_tilt_track_deadband_px:
+            err_y = 0.0
+
+        target = self.camera_tilt_ball_n_pos - self.camera_tilt_track_kp * err_y
+        min_pos = min(self.camera_tilt_track_min_n_pos, self.camera_tilt_track_max_n_pos)
+        max_pos = max(self.camera_tilt_track_min_n_pos, self.camera_tilt_track_max_n_pos)
+        return max(min(target, max_pos), min_pos)
+
     def update_camera_tilt_target(self, now: float = None):
         if not self.enable_camera_tilt_control or self.accessory_pub is None:
             return
@@ -499,6 +528,8 @@ class BehaviorManager(Node):
             if now is None:
                 now = self.now()
             target = self.compute_search_tilt_target(now)
+        elif self.state == BehaviorState.TRACK_BALL:
+            target = self.compute_track_ball_tilt_target()
         elif self.state in (BehaviorState.SEARCH, BehaviorState.TRACK_BALL, BehaviorState.FETCH, BehaviorState.GRASP):
             target = self.camera_tilt_ball_n_pos
         else:

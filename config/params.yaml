@@ -47,6 +47,7 @@ overlay_fused:
 
 behavior_manager:
   ros__parameters:
+    image_height: 480
     search_speed: 0.125
     enable_camera_tilt_control: true
     camera_tilt_topic: /cmd_accessory_pos
@@ -58,6 +59,10 @@ behavior_manager:
     camera_tilt_search_max_n_pos: 7.8
     camera_tilt_search_sweep_period: 6.0
     camera_tilt_publish_min_delta: 0.03
+    camera_tilt_track_min_n_pos: 6.6
+    camera_tilt_track_max_n_pos: 8.1
+    camera_tilt_track_kp: 0.003
+    camera_tilt_track_deadband_px: 24.0
     # Accessory msg contains neck+gripper together; passthrough tracks current gripper from OpenCR state.
     camera_tilt_opencr_state_topic: /opencr_state
     camera_tilt_use_opencr_gripper_passthrough: true
