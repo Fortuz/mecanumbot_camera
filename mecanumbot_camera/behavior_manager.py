@@ -125,7 +125,7 @@ class BehaviorManager(Node):
 
         # Publishers
         self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
-        self.gripper_pub = self.create_publisher(Float64, "/gripper_controller/commands", 10)
+        self.gripper_pub = self.create_publisher(Float64, "/cmd_accessory_pos", 10)
         self.accessory_pub = None
         if self.enable_camera_tilt_control:
             if AccessMotorCmd is None:
