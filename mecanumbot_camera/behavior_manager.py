@@ -29,7 +29,7 @@ class BehaviorManager(Node):
     BEHAVIOR_PARAMETER_DEFAULTS = {
         "image_width": 640,
         "image_height": 480,
-        "fetch_enter_px": 200,
+        "fetch_enter_px": 120,
         "fetch_stop_px": 280,
         "REQUIRED_BALL_STABLE": 3,
         "REQUIRED_PERSON_STABLE": 3,
@@ -405,7 +405,7 @@ class BehaviorManager(Node):
                 self.get_logger().info("Ball lost → SEARCH")
                 self.state = BehaviorState.SEARCH
             else:
-                twist = self.compute_ball_control()
+                twist = self.compute_ball_control(slow=True)
 
                 if self.ball_width_px >= self.fetch_enter_px and \
                         self.ball_stable_frames >= self.REQUIRED_BALL_STABLE:
