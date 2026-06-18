@@ -77,6 +77,7 @@ class BehaviorManager(Node):
         self.last_ball_time = -1e9
         self.ball_center_x = None
         self.ball_width_px = 0.0
+        self.ball_height_px = 0.0
         self.ball_stable_frames = 0
 
         # Person state
@@ -278,7 +279,11 @@ class BehaviorManager(Node):
         det = max(msg.detections, key=lambda d: d.bbox.size_x)
         self.ball_center_x = det.bbox.center.position.x
         self.ball_width_px = det.bbox.size_x
+        self.ball_height_px = det.bbox.size_y
         self.last_ball_time = self.now()
+
+    def format_ball_bbox_size(self):
+        return f"{self.ball_width_px:.1f}x{self.ball_height_px:.1f}px"
 
     # ==========================================================
     # PERSON CALLBACK
@@ -358,7 +363,7 @@ class BehaviorManager(Node):
             else:
                 if ball_seen and self.ball_stable_frames >= self.REQUIRED_BALL_STABLE:
                     self.state = BehaviorState.TRACK_BALL
-                    self.get_logger().info("→ TRACK_BALL")
+                    self.get_logger().info(f"→ TRACK_BALL ball_bbox={self.format_ball_bbox_size()}")
 
         # ------------------------------------------------------
         # TRACK_BALL
@@ -373,7 +378,7 @@ class BehaviorManager(Node):
                 if self.ball_width_px >= self.fetch_enter_px and \
                         self.ball_stable_frames >= self.REQUIRED_BALL_STABLE:
                     self.state = BehaviorState.FETCH
-                    self.get_logger().info("→ FETCH")
+                    self.get_logger().info(f"→ FETCH ball_bbox={self.format_ball_bbox_size()}")
 
         # ------------------------------------------------------
         # FETCH — finom közelítés
