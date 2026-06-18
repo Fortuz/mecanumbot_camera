@@ -312,8 +312,8 @@ class BehaviorManager(Node):
         msg = AccessMotorCmd()       
         msg.n_pos = self.last_camera_tilt_target
         # AccessMotorCmd bundles neck + grippers, so keep gripper fields aligned with latest known values.
-        msg.gl_pos = (MECANUMBOT_MIN_GRIPPER_POS + MECANUMBOT_FRONT_GRIPPER_POS)/2
-        msg.gr_pos = (MECANUMBOT_MAX_GRIPPER_POS + MECANUMBOT_FRONT_GRIPPER_POS)/2
+        msg.gr_pos = (MECANUMBOT_MIN_GRIPPER_POS + MECANUMBOT_FRONT_GRIPPER_POS)/2
+        msg.gl_pos = (MECANUMBOT_MAX_GRIPPER_POS + MECANUMBOT_FRONT_GRIPPER_POS)/2
         self.gripper_pub.publish(msg)
         self.get_logger().info("[GRIPPER] close (0.0)")
         self.last_gripper_left = msg.gl_pos
