@@ -305,19 +305,19 @@ class BehaviorManager(Node):
         msg.gr_pos = MECANUMBOT_FRONT_GRIPPER_POS
         self.gripper_pub.publish(msg)
         self.get_logger().info("[GRIPPER] open (1.0)")
-        self.last_gripper_left = msg.pos_gl
-        self.last_gripper_right = msg.pos_gr
+        self.last_gripper_left = msg.gl_pos
+        self.last_gripper_right = msg.gr_pos
 
     def close_gripper(self):
-        msg = AccessMotorCmd()        
+        msg = AccessMotorCmd()       
         msg.n_pos = self.last_camera_tilt_target
         # AccessMotorCmd bundles neck + grippers, so keep gripper fields aligned with latest known values.
         msg.gl_pos = (MECANUMBOT_MIN_GRIPPER_POS + MECANUMBOT_FRONT_GRIPPER_POS)/2
         msg.gr_pos = (MECANUMBOT_MAX_GRIPPER_POS + MECANUMBOT_FRONT_GRIPPER_POS)/2
         self.gripper_pub.publish(msg)
         self.get_logger().info("[GRIPPER] close (0.0)")
-        self.last_gripper_left = msg.pos_gl
-        self.last_gripper_right = msg.pos_gr
+        self.last_gripper_left = msg.gl_pos
+        self.last_gripper_right = msg.gr_pos
 
     # ==========================================================
     # CONTROL LOOP — MAIN FSM
