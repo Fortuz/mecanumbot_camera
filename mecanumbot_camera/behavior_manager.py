@@ -29,8 +29,8 @@ class BehaviorManager(Node):
     BEHAVIOR_PARAMETER_DEFAULTS = {
         "image_width": 640,
         "image_height": 480,
-        "fetch_enter_px": 120,
-        "fetch_stop_px": 280,
+        "fetch_enter_px": 150,
+        "fetch_stop_px": 240,
         "REQUIRED_BALL_STABLE": 3,
         "REQUIRED_PERSON_STABLE": 3,
         "ball_lost_timeout": 1.0,
@@ -39,6 +39,13 @@ class BehaviorManager(Node):
         "Kp_fwd": 0.015,
         "max_ang": 0.8,
         "max_lin": 0.30,
+        "slow_ang_scale": 0.85,
+        "slow_lin_scale": 0.50,
+        "ball_close_turn_boost_start_px": 150.0,
+        "ball_close_turn_boost": 1.8,
+        "ball_forward_slowdown_start_px": 60.0,
+        "ball_forward_stop_error_px": 180.0,
+        "grasp_center_tolerance_px": 80.0,
         "search_speed": 0.125,
         "owner_threshold_px": 150,
         "grasp_duration": 1.0,
@@ -64,6 +71,13 @@ class BehaviorManager(Node):
         "Kp_fwd",
         "max_ang",
         "max_lin",
+        "slow_ang_scale",
+        "slow_lin_scale",
+        "ball_close_turn_boost_start_px",
+        "ball_close_turn_boost",
+        "ball_forward_slowdown_start_px",
+        "ball_forward_stop_error_px",
+        "grasp_center_tolerance_px",
     }
 
     def __init__(self):
@@ -98,14 +112,21 @@ class BehaviorManager(Node):
         self.declare_parameter("camera_tilt_ball_n_pos", 7.2)    # forward, slightly down
         self.declare_parameter("camera_tilt_owner_n_pos", 8.2)   # slight up
         self.declare_parameter("camera_tilt_search_sweep_enabled", True)
-        self.declare_parameter("camera_tilt_search_min_n_pos", 6.8)
-        self.declare_parameter("camera_tilt_search_max_n_pos", 7.8)
-        self.declare_parameter("camera_tilt_search_sweep_period", 6.0)
+        self.declare_parameter("camera_tilt_search_min_n_pos", 5.8)
+        self.declare_parameter("camera_tilt_search_max_n_pos", 7.4)
+        self.declare_parameter("camera_tilt_search_sweep_period", 9.0)
+        self.declare_parameter("camera_tilt_owner_search_sweep_enabled", True)
+        self.declare_parameter("camera_tilt_owner_search_min_n_pos", 7.6)
+        self.declare_parameter("camera_tilt_owner_search_max_n_pos", 8.4)
+        self.declare_parameter("camera_tilt_owner_search_sweep_period", 7.0)
         self.declare_parameter("camera_tilt_publish_min_delta", 0.03)
-        self.declare_parameter("camera_tilt_track_min_n_pos", 6.0)
+        self.declare_parameter("camera_tilt_track_min_n_pos", 5.6)
         self.declare_parameter("camera_tilt_track_max_n_pos", 8.1)
         self.declare_parameter("camera_tilt_track_kp", 0.005)
         self.declare_parameter("camera_tilt_track_deadband_px", 24.0)
+        self.declare_parameter("camera_tilt_track_close_down_n_pos", 5.7)
+        self.declare_parameter("camera_tilt_track_close_start_px", 140.0)
+        self.declare_parameter("camera_tilt_track_close_full_px", 260.0)
         self.declare_parameter("camera_tilt_opencr_state_topic", "/opencr_state")
         self.declare_parameter("camera_tilt_use_opencr_gripper_passthrough", True)
         self.declare_parameter("camera_tilt_gripper_hold_left", 5.12)
@@ -121,11 +142,32 @@ class BehaviorManager(Node):
         self.camera_tilt_search_min_n_pos = float(self.get_parameter("camera_tilt_search_min_n_pos").value)
         self.camera_tilt_search_max_n_pos = float(self.get_parameter("camera_tilt_search_max_n_pos").value)
         self.camera_tilt_search_sweep_period = float(self.get_parameter("camera_tilt_search_sweep_period").value)
+        self.camera_tilt_owner_search_sweep_enabled = bool(
+            self.get_parameter("camera_tilt_owner_search_sweep_enabled").value
+        )
+        self.camera_tilt_owner_search_min_n_pos = float(
+            self.get_parameter("camera_tilt_owner_search_min_n_pos").value
+        )
+        self.camera_tilt_owner_search_max_n_pos = float(
+            self.get_parameter("camera_tilt_owner_search_max_n_pos").value
+        )
+        self.camera_tilt_owner_search_sweep_period = float(
+            self.get_parameter("camera_tilt_owner_search_sweep_period").value
+        )
         self.camera_tilt_publish_min_delta = float(self.get_parameter("camera_tilt_publish_min_delta").value)
         self.camera_tilt_track_min_n_pos = float(self.get_parameter("camera_tilt_track_min_n_pos").value)
         self.camera_tilt_track_max_n_pos = float(self.get_parameter("camera_tilt_track_max_n_pos").value)
         self.camera_tilt_track_kp = float(self.get_parameter("camera_tilt_track_kp").value)
         self.camera_tilt_track_deadband_px = float(self.get_parameter("camera_tilt_track_deadband_px").value)
+        self.camera_tilt_track_close_down_n_pos = float(
+            self.get_parameter("camera_tilt_track_close_down_n_pos").value
+        )
+        self.camera_tilt_track_close_start_px = float(
+            self.get_parameter("camera_tilt_track_close_start_px").value
+        )
+        self.camera_tilt_track_close_full_px = float(
+            self.get_parameter("camera_tilt_track_close_full_px").value
+        )
         self.camera_tilt_opencr_state_topic = self.get_parameter("camera_tilt_opencr_state_topic").value
         self.camera_tilt_use_opencr_gripper_passthrough = bool(
             self.get_parameter("camera_tilt_use_opencr_gripper_passthrough").value
@@ -169,6 +211,9 @@ class BehaviorManager(Node):
                     f"owner_n_pos={self.camera_tilt_owner_n_pos:.2f}, "
                     f"search_sweep={self.camera_tilt_search_sweep_enabled} "
                     f"[{self.camera_tilt_search_min_n_pos:.2f}, {self.camera_tilt_search_max_n_pos:.2f}], "
+                    f"owner_search_sweep={self.camera_tilt_owner_search_sweep_enabled} "
+                    f"[{self.camera_tilt_owner_search_min_n_pos:.2f}, "
+                    f"{self.camera_tilt_owner_search_max_n_pos:.2f}], "
                     f"track_range=[{self.camera_tilt_track_min_n_pos:.2f}, {self.camera_tilt_track_max_n_pos:.2f}]"
                 )
                 if self.camera_tilt_use_opencr_gripper_passthrough:
@@ -252,6 +297,8 @@ class BehaviorManager(Node):
             return "fetch_enter_px must be < fetch_stop_px"
         if values["owner_threshold_px"] <= 0:
             return "owner_threshold_px must be > 0"
+        if values["ball_forward_stop_error_px"] <= values["ball_forward_slowdown_start_px"]:
+            return "ball_forward_stop_error_px must be > ball_forward_slowdown_start_px"
 
         for name in ("REQUIRED_BALL_STABLE", "REQUIRED_PERSON_STABLE"):
             if values[name] < 1:
@@ -314,6 +361,16 @@ class BehaviorManager(Node):
 
     def format_ball_bbox_size(self):
         return f"{self.ball_width_px:.1f}x{self.ball_height_px:.1f}px"
+
+    def ball_size_px(self):
+        return max(self.ball_width_px, self.ball_height_px)
+
+    def ball_is_centered_for_grasp(self):
+        if self.ball_center_x is None:
+            return False
+
+        center = self.image_width / 2.0
+        return abs(self.ball_center_x - center) <= self.grasp_center_tolerance_px
 
     # ==========================================================
     # PERSON CALLBACK
@@ -407,7 +464,7 @@ class BehaviorManager(Node):
             else:
                 twist = self.compute_ball_control(slow=True)
 
-                if self.ball_width_px >= self.fetch_enter_px and \
+                if self.ball_size_px() >= self.fetch_enter_px and \
                         self.ball_stable_frames >= self.REQUIRED_BALL_STABLE:
                     self.state = BehaviorState.FETCH
                     self.get_logger().info(f"→ FETCH ball_bbox={self.format_ball_bbox_size()}")
@@ -422,8 +479,9 @@ class BehaviorManager(Node):
             else:
                 twist = self.compute_ball_control(slow=True)
 
-                if self.ball_width_px >= self.fetch_stop_px and \
-                        self.ball_stable_frames >= self.REQUIRED_BALL_STABLE:
+                if self.ball_size_px() >= self.fetch_stop_px and \
+                        self.ball_stable_frames >= self.REQUIRED_BALL_STABLE and \
+                        self.ball_is_centered_for_grasp():
                     self.cmd_pub.publish(Twist())
                     self.get_logger().info("Ball reached → GRASP")
                     self.state = BehaviorState.GRASP
@@ -502,6 +560,15 @@ class BehaviorManager(Node):
         min_pos = min(self.camera_tilt_search_min_n_pos, self.camera_tilt_search_max_n_pos)
         max_pos = max(self.camera_tilt_search_min_n_pos, self.camera_tilt_search_max_n_pos)
         period = max(self.camera_tilt_search_sweep_period, 0.1)
+        return self.compute_sweep_tilt_target(now, min_pos, max_pos, period)
+
+    def compute_owner_search_tilt_target(self, now: float) -> float:
+        min_pos = min(self.camera_tilt_owner_search_min_n_pos, self.camera_tilt_owner_search_max_n_pos)
+        max_pos = max(self.camera_tilt_owner_search_min_n_pos, self.camera_tilt_owner_search_max_n_pos)
+        period = max(self.camera_tilt_owner_search_sweep_period, 0.1)
+        return self.compute_sweep_tilt_target(now, min_pos, max_pos, period)
+
+    def compute_sweep_tilt_target(self, now: float, min_pos: float, max_pos: float, period: float) -> float:
         phase = (now % period) / period
         ratio = phase * 2.0 if phase < 0.5 else (1.0 - phase) * 2.0
         return min_pos + (max_pos - min_pos) * ratio
@@ -516,6 +583,16 @@ class BehaviorManager(Node):
             err_y = 0.0
 
         target = self.camera_tilt_ball_n_pos - self.camera_tilt_track_kp * err_y
+
+        close_start = min(self.camera_tilt_track_close_start_px, self.camera_tilt_track_close_full_px)
+        close_full = max(self.camera_tilt_track_close_start_px, self.camera_tilt_track_close_full_px)
+        close_span = max(close_full - close_start, 1.0)
+        close_ratio = max(min((self.ball_size_px() - close_start) / close_span, 1.0), 0.0)
+        close_target = self.camera_tilt_ball_n_pos + (
+            self.camera_tilt_track_close_down_n_pos - self.camera_tilt_ball_n_pos
+        ) * close_ratio
+        target = min(target, close_target)
+
         min_pos = min(self.camera_tilt_track_min_n_pos, self.camera_tilt_track_max_n_pos)
         max_pos = max(self.camera_tilt_track_min_n_pos, self.camera_tilt_track_max_n_pos)
         return max(min(target, max_pos), min_pos)
@@ -530,7 +607,13 @@ class BehaviorManager(Node):
             target = self.compute_search_tilt_target(now)
         elif self.state in (BehaviorState.TRACK_BALL, BehaviorState.FETCH):
             target = self.compute_track_ball_tilt_target()
-        elif self.state in (BehaviorState.SEARCH, BehaviorState.TRACK_BALL, BehaviorState.FETCH, BehaviorState.GRASP):
+        elif self.state == BehaviorState.FIND_OWNER and self.camera_tilt_owner_search_sweep_enabled:
+            if now is None:
+                now = self.now()
+            target = self.compute_owner_search_tilt_target(now)
+        elif self.state == BehaviorState.GRASP:
+            target = self.camera_tilt_track_close_down_n_pos
+        elif self.state in (BehaviorState.SEARCH, BehaviorState.TRACK_BALL, BehaviorState.FETCH):
             target = self.camera_tilt_ball_n_pos
         else:
             target = self.camera_tilt_owner_n_pos
@@ -569,16 +652,26 @@ class BehaviorManager(Node):
         err = self.ball_center_x - center
 
         ang = -self.Kp_rot * err
+        if self.ball_size_px() > self.ball_close_turn_boost_start_px:
+            close_span = max(self.fetch_stop_px - self.ball_close_turn_boost_start_px, 1.0)
+            close_ratio = max(min((self.ball_size_px() - self.ball_close_turn_boost_start_px) / close_span, 1.0), 0.0)
+            ang *= 1.0 + close_ratio * self.ball_close_turn_boost
         ang = max(min(ang, self.max_ang), -self.max_ang)
 
         lin = 0.0
-        if self.ball_width_px < self.fetch_stop_px:
-            lin = self.Kp_fwd * (self.fetch_stop_px - self.ball_width_px)
+        if self.ball_size_px() < self.fetch_stop_px:
+            lin = self.Kp_fwd * (self.fetch_stop_px - self.ball_size_px())
             lin = max(min(lin, self.max_lin), 0.0)
 
+        abs_err = abs(err)
+        if abs_err > self.ball_forward_slowdown_start_px:
+            err_span = self.ball_forward_stop_error_px - self.ball_forward_slowdown_start_px
+            err_ratio = max(min((abs_err - self.ball_forward_slowdown_start_px) / err_span, 1.0), 0.0)
+            lin *= 1.0 - err_ratio
+
         if slow:
-            ang *= 0.5
-            lin *= 0.5
+            ang *= self.slow_ang_scale
+            lin *= self.slow_lin_scale
 
         twist.angular.z = ang
         twist.linear.x = lin

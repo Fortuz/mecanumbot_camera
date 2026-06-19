@@ -48,23 +48,39 @@ overlay_fused:
 behavior_manager:
   ros__parameters:
     image_height: 480
-    fetch_enter_px: 200
-    fetch_stop_px: 280
+    fetch_enter_px: 150
+    fetch_stop_px: 240
     search_speed: 0.125
+    Kp_rot: 0.0030
+    max_ang: 0.9
+    slow_ang_scale: 0.85
+    slow_lin_scale: 0.45
+    ball_close_turn_boost_start_px: 150.0
+    ball_close_turn_boost: 1.8
+    ball_forward_slowdown_start_px: 60.0
+    ball_forward_stop_error_px: 180.0
+    grasp_center_tolerance_px: 80.0
     enable_camera_tilt_control: true
     camera_tilt_topic: /cmd_accessory_pos
     # n_pos from Fortuz/mecanumbot accessory channel (approx range: 2.0..8.6)
     camera_tilt_ball_n_pos: 7.2
     camera_tilt_owner_n_pos: 8.2
     camera_tilt_search_sweep_enabled: true
-    camera_tilt_search_min_n_pos: 6.8
-    camera_tilt_search_max_n_pos: 7.8
-    camera_tilt_search_sweep_period: 6.0
+    camera_tilt_search_min_n_pos: 5.8
+    camera_tilt_search_max_n_pos: 7.4
+    camera_tilt_search_sweep_period: 9.0
+    camera_tilt_owner_search_sweep_enabled: true
+    camera_tilt_owner_search_min_n_pos: 7.6
+    camera_tilt_owner_search_max_n_pos: 8.4
+    camera_tilt_owner_search_sweep_period: 7.0
     camera_tilt_publish_min_delta: 0.03
-    camera_tilt_track_min_n_pos: 6.0
+    camera_tilt_track_min_n_pos: 5.6
     camera_tilt_track_max_n_pos: 8.1
     camera_tilt_track_kp: 0.005
     camera_tilt_track_deadband_px: 24.0
+    camera_tilt_track_close_down_n_pos: 5.7
+    camera_tilt_track_close_start_px: 140.0
+    camera_tilt_track_close_full_px: 260.0
     # Accessory msg contains neck+gripper together; passthrough tracks current gripper from OpenCR state.
     camera_tilt_opencr_state_topic: /opencr_state
     camera_tilt_use_opencr_gripper_passthrough: true
