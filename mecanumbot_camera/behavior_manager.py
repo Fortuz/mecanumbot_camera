@@ -4,7 +4,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from vision_msgs.msg import Detection2DArray
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from std_msgs.msg import Float64
+from std_msgs.msg import Bool
 from rcl_interfaces.msg import SetParametersResult
 try:
     from mecanumbot_msgs.msg import AccessMotorCmd, OpenCRState
@@ -96,6 +96,16 @@ class BehaviorManager(Node):
         self.ball_width_px = 0.0
         self.ball_height_px = 0.0
         self.ball_stable_frames = 0
+
+        # Object-present flag from the base depth/distance sensor pipeline.
+        self.declare_parameter("enable_has_object_grasp", True)
+        self.declare_parameter("has_object_topic", "/mecanumbot/has_object")
+        self.declare_parameter("has_object_timeout", 0.4)
+        self.enable_has_object_grasp = bool(self.get_parameter("enable_has_object_grasp").value)
+        self.has_object_topic = self.get_parameter("has_object_topic").value
+        self.has_object_timeout = float(self.get_parameter("has_object_timeout").value)
+        self.has_object = False
+        self.last_has_object_time = -1e9
 
         # Person state
         self.last_person_time = -1e9
@@ -249,6 +259,17 @@ class BehaviorManager(Node):
             self.person_callback,
             qos
         )
+        if self.enable_has_object_grasp:
+            self.create_subscription(
+                Bool,
+                self.has_object_topic,
+                self.has_object_callback,
+                10
+            )
+            self.get_logger().info(
+                f"Object-grasp flag enabled on {self.has_object_topic} "
+                f"(timeout={self.has_object_timeout:.2f}s)."
+            )
 
         self.get_logger().info("Behavior Manager initialized.")
         self.update_camera_tilt_target()
@@ -372,6 +393,17 @@ class BehaviorManager(Node):
         center = self.image_width / 2.0
         return abs(self.ball_center_x - center) <= self.grasp_center_tolerance_px
 
+    def has_object_for_grasp(self, now: float) -> bool:
+        if not self.enable_has_object_grasp:
+            return False
+
+        return self.has_object and (now - self.last_has_object_time) < self.has_object_timeout
+
+    def has_object_callback(self, msg: Bool):
+        self.has_object = bool(msg.data)
+        if self.has_object:
+            self.last_has_object_time = self.now()
+
     # ==========================================================
     # PERSON CALLBACK
     # ==========================================================
@@ -459,12 +491,19 @@ class BehaviorManager(Node):
         # ------------------------------------------------------
         elif self.state == BehaviorState.TRACK_BALL:
             if not ball_seen:
-                self.get_logger().info("Ball lost → SEARCH")
-                self.state = BehaviorState.SEARCH
+                if self.has_object_for_grasp(now):
+                    twist = Twist()
+                    self.enter_grasp(now, "Object flag true after ball lost")
+                else:
+                    self.get_logger().info("Ball lost → SEARCH")
+                    self.state = BehaviorState.SEARCH
             else:
                 twist = self.compute_ball_control(slow=True)
 
-                if self.ball_size_px() >= self.fetch_enter_px and \
+                if self.has_object_for_grasp(now):
+                    twist = Twist()
+                    self.enter_grasp(now, "Object flag true")
+                elif self.ball_size_px() >= self.fetch_enter_px and \
                         self.ball_stable_frames >= self.REQUIRED_BALL_STABLE:
                     self.state = BehaviorState.FETCH
                     self.get_logger().info(f"→ FETCH ball_bbox={self.format_ball_bbox_size()}")
@@ -474,18 +513,23 @@ class BehaviorManager(Node):
         # ------------------------------------------------------
         elif self.state == BehaviorState.FETCH:
             if not ball_seen:
-                self.get_logger().info("Ball lost during FETCH → SEARCH")
-                self.state = BehaviorState.SEARCH
+                if self.has_object_for_grasp(now):
+                    twist = Twist()
+                    self.enter_grasp(now, "Object flag true after ball lost during FETCH")
+                else:
+                    self.get_logger().info("Ball lost during FETCH → SEARCH")
+                    self.state = BehaviorState.SEARCH
             else:
                 twist = self.compute_ball_control(slow=True)
 
-                if self.ball_size_px() >= self.fetch_stop_px and \
+                if self.has_object_for_grasp(now):
+                    twist = Twist()
+                    self.enter_grasp(now, "Object flag true")
+                elif self.ball_size_px() >= self.fetch_stop_px and \
                         self.ball_stable_frames >= self.REQUIRED_BALL_STABLE and \
                         self.ball_is_centered_for_grasp():
-                    self.cmd_pub.publish(Twist())
-                    self.get_logger().info("Ball reached → GRASP")
-                    self.state = BehaviorState.GRASP
-                    self.start_grasp(now)
+                    twist = Twist()
+                    self.enter_grasp(now, "Ball reached")
 
         # ------------------------------------------------------
         # GRASP — zárd a gripper-t, várj kicsit
@@ -634,6 +678,13 @@ class BehaviorManager(Node):
     def opencr_state_callback(self, msg):
         self.last_gripper_left = float(msg.pos_gl) / 100.0
         self.last_gripper_right = float(msg.pos_gr) / 100.0
+
+    # ==========================================================
+    def enter_grasp(self, now: float, reason: str):
+        self.cmd_pub.publish(Twist())
+        self.get_logger().info(f"{reason} -> GRASP")
+        self.state = BehaviorState.GRASP
+        self.start_grasp(now)
 
     # ==========================================================
     def start_grasp(self, now: float):

@@ -60,6 +60,9 @@ behavior_manager:
     ball_forward_slowdown_start_px: 60.0
     ball_forward_stop_error_px: 180.0
     grasp_center_tolerance_px: 80.0
+    enable_has_object_grasp: true
+    has_object_topic: /mecanumbot/has_object
+    has_object_timeout: 0.4
     enable_camera_tilt_control: true
     camera_tilt_topic: /cmd_accessory_pos
     # n_pos from Fortuz/mecanumbot accessory channel (approx range: 2.0..8.6)
